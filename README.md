@@ -77,64 +77,60 @@ cp start_bambu_fifo.sh /path/to/config/.config/BambuStudio/cameratools/
 chmod +x /path/to/config/.config/BambuStudio/cameratools/go2rtc
 chmod +x /path/to/config/.config/BambuStudio/cameratools/bambu_fifo_feeder.sh
 chmod +x /path/to/config/.config/BambuStudio/cameratools/start_bambu_fifo.sh
-```
 
-#### 3. 配置开机自启（可选）
+# 在宿主机上创建自定义服务目录
+mkdir -p /path/to/host/custom-services.d/
 
-将启动脚本复制到 LinuxServer.io 容器的自定义启动目录：
-
-```bash
-# 创建自定义服务目录（如果不存在）
-mkdir -p /custom-cont-init.d/
-
-# 复制启动脚本
-cp start_bambu_fifo.sh /custom-cont-init.d/99-bambu-streamer.sh
+# 复制启动脚本到服务目录
+cp start_bambu_fifo.sh /path/to/host/custom-services.d/bambu-streamer
 
 # 添加执行权限
-chmod +x /path/to/config/custom-cont-init.d/99-bambu-streamer.sh
+chmod +x /path/to/host/custom-services.d/bambu-streamer
 ```
 
-LinuxServer.io 容器会在启动时自动执行 `/custom-cont-init.d/` 目录中的脚本。
+### 使用方法（Docker 配置）
 
-### 使用方法
+#### 完整 Docker Compose 配置示例
 
-#### 方式 1：手动启动
-
-进入容器后执行：
-
-```bash
-cd /config/.config/BambuStudio/cameratools
-./start_bambu_fifo.sh
-```
-
-#### 方式 2：使用环境变量
-
-在 Docker Compose 或 Docker 命令中设置 `BAMBU_URL` 环境变量：
-
-**Docker Compose 示例**：
+创建 `docker-compose.yml` 文件：
 
 ```yaml
+version: "3.8"
+
 services:
   bambustudio:
     image: lscr.io/linuxserver/bambustudio:latest
+    container_name: bambustudio
     environment:
       - PUID=1000
       - PGID=1000
       - TZ=Asia/Shanghai
-      # 安装必要的依赖包
+      # 安装必要的依赖包（必需）
       - DOCKER_MODS=linuxserver/mods:universal-package-install
-      - INSTALL_PACKAGES=gosu|ffmpeg
-      # Bambu 打印机连接 URL（可选）
+      - INSTALL_PACKAGES=gosu ffmpeg
+      # Bambu 打印机连接 URL（可选，推荐）
       - BAMBU_URL=bambu:///tutk?uid=YOUR_PRINTER_UID&authkey=YOUR_AUTH_KEY
     volumes:
-      - /path/to/config:/config
+      - /path/to/config:/config                              # 配置目录
+      - /path/to/host/custom-services.d:/custom-services.d  # 自定义服务目录（开机自启）
     ports:
       - 3000:3000      # Bambu Studio Web UI
       - 1984:1984      # go2rtc Web UI
       - 8554:8554      # RTSP 端口
+    restart: unless-stopped
 ```
 
-**Docker CLI 示例**：
+**说明**：
+
+1. **`/config` 挂载**：存放 Bambu Studio 配置和工具文件
+2. **`/custom-services.d` 挂载**：容器启动时自动执行此目录中的服务脚本（实现开机自启）
+3. **`BAMBU_URL` 环境变量**：可选，但强烈推荐设置，避免每次手动配置
+4. **端口映射**：
+   - `3000`: Bambu Studio Web 界面
+   - `1984`: go2rtc Web 管理界面
+   - `8554`: RTSP 视频流端口
+
+#### Docker CLI 示例
 
 ```bash
 docker run -d \
@@ -143,14 +139,31 @@ docker run -d \
   -e PGID=1000 \
   -e TZ=Asia/Shanghai \
   -e DOCKER_MODS=linuxserver/mods:universal-package-install \
-  -e INSTALL_PACKAGES=gosu|ffmpeg \
+  -e INSTALL_PACKAGES="gosu ffmpeg" \
   -e BAMBU_URL="bambu:///tutk?uid=YOUR_PRINTER_UID&authkey=YOUR_AUTH_KEY" \
   -p 3000:3000 \
   -p 1984:1984 \
   -p 8554:8554 \
   -v /path/to/config:/config \
+  -v /path/to/host/custom-services.d:/custom-services.d \
+  --restart unless-stopped \
   lscr.io/linuxserver/bambustudio:latest
 ```
+
+#### 启动容器
+
+```bash
+# 使用 Docker Compose
+docker-compose up -d
+
+# 或使用 Docker CLI（使用上面的命令）
+```
+
+容器启动后，系统会自动：
+1. 安装 `gosu` 和 `ffmpeg` 依赖
+2. 执行 `/custom-services.d/bambu-streamer` 脚本
+3. 启动 FIFO feeder 和 go2rtc 服务
+4. 开始视频流传输
 
 ### BAMBU_URL 环境变量
 
@@ -230,7 +243,7 @@ Before using this script, you need to:
    ```yaml
    environment:
      - DOCKER_MODS=linuxserver/mods:universal-package-install
-     - INSTALL_PACKAGES=gosu|ffmpeg
+     - INSTALL_PACKAGES=gosu ffmpeg
    ```
    
    Package purposes:
@@ -277,64 +290,60 @@ cp start_bambu_fifo.sh /path/to/config/.config/BambuStudio/cameratools/
 chmod +x /path/to/config/.config/BambuStudio/cameratools/go2rtc
 chmod +x /path/to/config/.config/BambuStudio/cameratools/bambu_fifo_feeder.sh
 chmod +x /path/to/config/.config/BambuStudio/cameratools/start_bambu_fifo.sh
-```
 
-#### 3. Configure Auto-Start (Optional)
+# Create custom service directory on host
+mkdir -p /path/to/host/custom-services.d/
 
-Copy the startup script to LinuxServer.io container's custom init directory:
-
-```bash
-# Create custom service directory if it doesn't exist
-mkdir -p /path/to/config/custom-cont-init.d/
-
-# Copy startup script
-cp start_bambu_fifo.sh /path/to/config/custom-cont-init.d/99-bambu-streamer.sh
+# Copy startup script to service directory
+cp start_bambu_fifo.sh /path/to/host/custom-services.d/bambu-streamer
 
 # Set permissions
-chmod +x /path/to/config/custom-cont-init.d/99-bambu-streamer.sh
+chmod +x /path/to/host/custom-services.d/bambu-streamer
 ```
 
-LinuxServer.io containers automatically execute scripts in `/config/custom-cont-init.d/` on startup.
+### Usage (Docker Configuration)
 
-### Usage
+#### Complete Docker Compose Configuration
 
-#### Method 1: Manual Start
-
-Execute inside the container:
-
-```bash
-cd /config/.config/BambuStudio/cameratools
-./start_bambu_fifo.sh
-```
-
-#### Method 2: Using Environment Variables
-
-Set the `BAMBU_URL` environment variable in Docker Compose or Docker command:
-
-**Docker Compose Example**:
+Create a `docker-compose.yml` file:
 
 ```yaml
+version: "3.8"
+
 services:
   bambustudio:
     image: lscr.io/linuxserver/bambustudio:latest
+    container_name: bambustudio
     environment:
       - PUID=1000
       - PGID=1000
       - TZ=Asia/Shanghai
-      # Install required dependencies
+      # Install required dependencies (required)
       - DOCKER_MODS=linuxserver/mods:universal-package-install
-      - INSTALL_PACKAGES=gosu|ffmpeg
-      # Bambu printer connection URL (optional)
+      - INSTALL_PACKAGES=gosu ffmpeg
+      # Bambu printer connection URL (optional, recommended)
       - BAMBU_URL=bambu:///tutk?uid=YOUR_PRINTER_UID&authkey=YOUR_AUTH_KEY
     volumes:
-      - /path/to/config:/config
+      - /path/to/config:/config                              # Config directory
+      - /path/to/host/custom-services.d:/custom-services.d  # Custom services (auto-start)
     ports:
       - 3000:3000      # Bambu Studio Web UI
       - 1984:1984      # go2rtc Web UI
       - 8554:8554      # RTSP Port
+    restart: unless-stopped
 ```
 
-**Docker CLI Example**:
+**Description**:
+
+1. **`/config` mount**: Stores Bambu Studio configuration and tool files
+2. **`/custom-services.d` mount**: Scripts in this directory are auto-executed on container startup
+3. **`BAMBU_URL` environment variable**: Optional but highly recommended to avoid manual configuration
+4. **Port mappings**:
+   - `3000`: Bambu Studio Web interface
+   - `1984`: go2rtc Web management interface
+   - `8554`: RTSP video stream port
+
+#### Docker CLI Example
 
 ```bash
 docker run -d \
@@ -343,14 +352,31 @@ docker run -d \
   -e PGID=1000 \
   -e TZ=Asia/Shanghai \
   -e DOCKER_MODS=linuxserver/mods:universal-package-install \
-  -e INSTALL_PACKAGES=gosu|ffmpeg \
+  -e INSTALL_PACKAGES="gosu ffmpeg" \
   -e BAMBU_URL="bambu:///tutk?uid=YOUR_PRINTER_UID&authkey=YOUR_AUTH_KEY" \
   -p 3000:3000 \
   -p 1984:1984 \
   -p 8554:8554 \
   -v /path/to/config:/config \
+  -v /path/to/host/custom-services.d:/custom-services.d \
+  --restart unless-stopped \
   lscr.io/linuxserver/bambustudio:latest
 ```
+
+#### Start Container
+
+```bash
+# Using Docker Compose
+docker-compose up -d
+
+# Or using Docker CLI (use the command above)
+```
+
+After the container starts, the system will automatically:
+1. Install `gosu` and `ffmpeg` dependencies
+2. Execute `/custom-services.d/bambu-streamer` script
+3. Start FIFO feeder and go2rtc services
+4. Begin video stream transmission
 
 ### BAMBU_URL Environment Variable
 
