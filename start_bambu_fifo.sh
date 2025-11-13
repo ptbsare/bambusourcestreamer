@@ -121,25 +121,31 @@ start_service() {
     
     cleanup() {
         log "🛑 正在停止所有服务..."
+        # 检查 PID 文件是否存在
         if [ -f "$FEEDER_PID_FILE" ]; then
-            FEEDER_PID=$(cat "$FEEDER_PID_FILE")
-            if kill -0 "$FEEDER_PID" 2>/dev/null; then
-                log "停止 FIFO feeder (PID: $FEEDER_PID)..."
+            FEEDER_PID=$(cat "$FEEDER_PID_FILE" 2>/dev/null)
+            # 检查进程是否真的在运行
+            if [ -n "$FEEDER_PID" ] && kill -0 "$FEEDER_PID" 2>/dev/null; then
+                log "向 FIFO feeder (PID: $FEEDER_PID) 发送 SIGTERM 信号..."
+                # 向子进程发送终止信号，让它自己清理
                 kill -TERM "$FEEDER_PID"
-                for i in {1..5}; do
-                    if ! kill -0 "$FEEDER_PID" 2>/dev/null; then break; fi
-                    sleep 1
-                done
-                if kill -0 "$FEEDER_PID" 2>/dev/null; then kill -KILL "$FEEDER_PID"; fi
+                # 等待子进程优雅退出，设置超时
+                wait "$FEEDER_PID"
+                log "✅ FIFO feeder 已停止。"
             fi
+            # 清理 PID 文件
             rm -f "$FEEDER_PID_FILE"
         fi
+        
+        # 清理 FIFO 文件
         rm -f /tmp/bambu_video.fifo
-        log "✅ 所有服务已停止。"
-        exit 0
+        
+        log "✅ 所有服务已清理完毕。"
+        # exit 0 # 不在这里退出，让脚本自然结束
     }
 
-    trap cleanup SIGINT SIGTERM
+    # trap 会在脚本接收到信号时执行 cleanup, 然后 go2rtc 停止, 脚本最终会退出
+    trap 'cleanup' SIGINT SIGTERM
 
     if [ -f "$FEEDER_PID_FILE" ]; then
         OLD_PID=$(cat "$FEEDER_PID_FILE")
@@ -166,7 +172,13 @@ start_service() {
     log "  RTSP:    rtsp://localhost:8554/bambulabx1c"
     log "按 Ctrl+C 停止所有服务"
 
-    "$GO2RTC_BIN" -config "$CONFIG_FILE"
+    "$GO2RTC_BIN" -config "$CONFIG_FILE" &
+    GO2RTC_PID=$!
+
+    # 等待 go2rtc 进程退出
+    wait "$GO2RTC_PID"
+
+    # go2rtc 退出后，执行最终清理
     cleanup
 }
 

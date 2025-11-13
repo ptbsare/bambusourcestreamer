@@ -32,7 +32,7 @@ NET_VER = "02.03.01.52"
 CLI_VER = "02.03.01.51"
 CLI_ID = "f05f5cdd-e15a-4dc6-8f2e-4af89c4417c1"
 
-def get_full_url(client: BambuClient, device: dict) -> str:
+def get_full_url(client: BambuClient, device: dict, quiet: bool) -> str:
     """Fetches camera credentials and constructs the full URL."""
     device_id = device.get('dev_id')
     if not device_id:
@@ -40,11 +40,12 @@ def get_full_url(client: BambuClient, device: dict) -> str:
 
     creds = client.get_camera_credentials(device_id)
 
-    # --- Print the full credentials response ---
-    import json
-    print("\n--- Full Camera Credentials Response ---", file=sys.stderr)
-    print(json.dumps(creds, indent=2), file=sys.stderr)
-    print("----------------------------------------\n", file=sys.stderr)
+    # --- Print the full credentials response if not in quiet/discover mode ---
+    if not quiet:
+        import json
+        print("\n--- Full Camera Credentials Response ---", file=sys.stderr)
+        print(json.dumps(creds, indent=2), file=sys.stderr)
+        print("----------------------------------------\n", file=sys.stderr)
 
 
     # --- Extract all necessary parameters ---
@@ -123,8 +124,10 @@ def main():
             print("\nLogin cancelled.", file=sys.stderr)
             return 1
 
-    is_interactive = not args.serial and not args.quiet
+    # In discover mode, it should always be non-interactive
+    is_interactive = not args.serial and not args.quiet and not args.discover
 
+    # Only print titles in full interactive mode
     if is_interactive:
         print("Bambu Lab Cloud URL Generator")
         print("=============================")
@@ -132,6 +135,7 @@ def main():
     # --- 2. Authentication (using saved token) ---
     try:
         token = auth.get_or_create_token()
+        # Only print status in full interactive mode
         if is_interactive:
             print("✅ Authenticated using saved token.")
     except BambuAPIError as e:
@@ -150,7 +154,7 @@ def main():
             # For discover, printing nothing is a valid empty list.
             if not args.discover:
                print("❌ No printers found in your account.", file=sys.stderr)
-            return 1 if not args.discover else 0
+            return 0 # Exit cleanly with no output if no devices found
     except BambuAPIError as e:
         print(f"❌ Failed to get devices: {e}", file=sys.stderr)
         return 1
@@ -202,7 +206,7 @@ def main():
 
     # --- 5. Get URL ---
     try:
-        bambu_url = get_full_url(client, selected_device)
+        bambu_url = get_full_url(client, selected_device, args.quiet or args.discover)
     except (BambuAPIError, ValueError) as e:
         print(f"❌ Failed to generate URL: {e}", file=sys.stderr)
         return 1
