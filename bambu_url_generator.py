@@ -135,9 +135,12 @@ def main():
         if is_interactive:
             print("✅ Authenticated using saved token.")
     except BambuAPIError as e:
-        print(f"❌ Authentication failed: {e}", file=sys.stderr)
-        print("Please run with --login to create a token.", file=sys.stderr)
-        return 1
+       # Custom error handling for scripting
+       if "No valid saved token found" in str(e):
+           print("ERROR: NO_TOKEN_FOUND", file=sys.stderr)
+       else:
+           print(f"ERROR: AUTH_FAILED: {e}", file=sys.stderr)
+       return 1
 
     # --- 3. Get Devices ---
     client = BambuClient(token=token)

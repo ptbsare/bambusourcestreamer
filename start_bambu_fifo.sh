@@ -108,8 +108,10 @@ install_and_verify_dependencies() {
 
 login_to_bambu_cloud() {
     install_and_verify_dependencies
-    log "🔑 请根据提示进行交互式登录..."
-    python3 "$URL_GENERATOR_SCRIPT" --login
+    log "🔑 切换到 'abc' 用户进行交互式登录..."
+    log "   请根据接下来的提示操作。"
+    gosu abc python3 "$URL_GENERATOR_SCRIPT" --login
+    log "✅ 登录流程完成。"
     exit 0
 }
 
