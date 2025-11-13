@@ -1,4 +1,4 @@
-# Bambu Source Streamer
+# Bambu Source Streamer (Automated Service)
 
 [中文](#中文) | [English](#english)
 
@@ -8,212 +8,81 @@
 
 ### 简介
 
-Bambu Source Streamer 是一个用于 Bambu Lab 3D 打印机视频流的解决方案，专为 LinuxServer.io 的 Bambu Studio Docker 容器设计。它通过 FIFO（命名管道）和 go2rtc 实现单连接多客户端的高效视频流传输。
-
-**⚠️ 重要提示**：此项目是为了**解决 Bambu Studio 在 Linux Docker 环境中 Go Live 功能失败的 Bug**（ffmpeg 和 bambu_source 变成僵尸进程）。如果您的 Bambu Studio 推流功能正常工作，则不需要使用此脚本。
-
-### 前置条件
-
-在使用此脚本之前，您需要：
-
-1. **在 Bambu Studio 客户端中启用 Go Live**：
-   - 打开 Bambu Studio
-   - 进入打印机设置页面
-   - 找到并点击 "Go Live" 或 "直播推流" 选项
-   - 按照提示下载并安装"虚拟摄像头工具插件"（Virtual Camera Tools）
-   - 这一步会下载 `bambu_source` 和 `ffmpeg` 等必要工具到 `/config/.config/BambuStudio/cameratools/` 目录
-
-2. **配置 LinuxServer.io 容器依赖**：
-   
-   添加以下环境变量到您的 Docker 配置中以安装必要的依赖包：
-   
-   ```yaml
-   environment:
-     - DOCKER_MODS=linuxserver/mods:universal-package-install
-     - INSTALL_PACKAGES=gosu ffmpeg
-   ```
-   
-   这些包的作用：
-   - `gosu`: 用于在容器中切换用户（类似 sudo，但更适合容器环境）
-   - `ffmpeg`: 用于视频流处理
+Bambu Source Streamer 是一个为 Bambu Lab 打印机设计的、高度自动化的视频流服务。它专为在 Docker 环境（特别是 `linuxserver/bambustudio` 容器）中稳定运行而设计，解决了官方 Go Live 功能在某些情况下不稳定的问题。
 
 ### 特点
 
-- ✅ **单连接模式**：无论多少客户端连接，只保持一个到打印机的连接
-- ✅ **自动重连**：bambu_source 进程崩溃时自动重启
-- ✅ **多协议支持**：通过 go2rtc 支持 RTSP、WebRTC、HLS 等多种协议
-- ✅ **容器友好**：专为 Docker 环境优化
-- ✅ **开机自启**：支持容器启动时自动运行
+- ✅ **一键启动**：单个脚本自动处理所有依赖安装和配置。
+- ✅ **URL 自动刷新**：内置凭证刷新机制，实现长期稳定串流，无需人工干预。
+- ✅ **智能打印机发现**：自动检测账户下的打印机，单打印机用户无需配置序列号。
+- ✅ **多协议支持**：通过 go2rtc 支持 RTSP、WebRTC、HLS 等多种现代流媒体协议。
+- ✅ **容器化设计**：为 Docker 和 LinuxServer.io 的开机自启服务 (`/custom-services.d`) 优化。
 
-### 工作原理
+### 前置条件
 
-```
-打印机 ← (单连接) ← bambu_source → FIFO → go2rtc (ffmpeg) → 多个客户端
-                                              ↓
-                                    RTSP/WebRTC/HLS/...
-```
+1.  **安装 Bambu Studio 插件**:
+    - 在您的 Bambu Studio 桌面客户端或 Docker 容器的 Web UI 中，进入打印机设置页面。
+    - 点击 **"Go Live"** (直播推流) 选项。
+    - 按照提示，下载并安装 **"虚拟摄像头工具" (Virtual Camera Tools)** 插件。
+    - **这是必须的步骤**，因为它会安装核心的 `bambu_source` 二进制文件。
 
-### 安装步骤
+2.  **LinuxServer.io 容器依赖**:
+    - 确保您的 Docker `environment` 中包含 `DOCKER_MODS` 和 `INSTALL_PACKAGES`，以安装 `git`, `curl`, `unzip`, `jq`, `python3` 和 `pip`。
+      ```yaml
+      environment:
+        - DOCKER_MODS=linuxserver/mods:universal-package-install
+        - INSTALL_PACKAGES=git curl unzip jq python3 python3-pip
+      ```
 
-#### 1. 下载 go2rtc
+### 快速开始 (一键部署)
 
-从 [go2rtc releases](https://github.com/AlexxIT/go2rtc/releases) 下载适合您系统的二进制文件。
+**1. 登录 (首次使用)**
 
-#### 2. 部署到容器
-
-将文件复制到 Bambu Studio Docker 容器的配置目录：
-
-```bash
-# 假设您的容器挂载 /config 到宿主机的某个目录
-# 目标目录：/config/.config/BambuStudio/cameratools/
-
-# 复制文件
-cp go2rtc /path/to/config/.config/BambuStudio/cameratools/
-cp go2rtc_fifo.yaml /path/to/config/.config/BambuStudio/cameratools/
-cp bambu_fifo_feeder.sh /path/to/config/.config/BambuStudio/cameratools/
-cp start_bambu_fifo.sh /path/to/config/.config/BambuStudio/cameratools/
-
-# 添加执行权限
-chmod +x /path/to/config/.config/BambuStudio/cameratools/go2rtc
-chmod +x /path/to/config/.config/BambuStudio/cameratools/bambu_fifo_feeder.sh
-chmod +x /path/to/config/.config/BambuStudio/cameratools/start_bambu_fifo.sh
-
-# 在宿主机上创建自定义服务目录
-mkdir -p /path/to/host/custom-services.d/
-
-# 复制启动脚本到服务目录
-cp start_bambu_fifo.sh /path/to/host/custom-services.d/bambu-streamer
-
-# 添加执行权限
-chmod +x /path/to/host/custom-services.d/bambu-streamer
-```
-
-### 使用方法（Docker 配置）
-
-#### 完整 Docker Compose 配置示例
-
-创建 `docker-compose.yml` 文件：
-
-```yaml
-version: "3.8"
-
-services:
-  bambustudio:
-    image: lscr.io/linuxserver/bambustudio:latest
-    container_name: bambustudio
-    environment:
-      - PUID=1000
-      - PGID=1000
-      - TZ=Asia/Shanghai
-      # 安装必要的依赖包（必需）
-      - DOCKER_MODS=linuxserver/mods:universal-package-install
-      - INSTALL_PACKAGES=gosu ffmpeg
-      # Bambu 打印机连接 URL（可选，推荐）
-      - BAMBU_URL=bambu:///tutk?uid=YOUR_PRINTER_UID&authkey=YOUR_AUTH_KEY
-    volumes:
-      - /path/to/config:/config                              # 配置目录
-      - /path/to/host/custom-services.d:/custom-services.d  # 自定义服务目录（开机自启）
-    ports:
-      - 3000:3000      # Bambu Studio Web UI
-      - 1984:1984      # go2rtc Web UI
-      - 8554:8554      # RTSP 端口
-    restart: unless-stopped
-```
-
-**说明**：
-
-1. **`/config` 挂载**：存放 Bambu Studio 配置和工具文件
-2. **`/custom-services.d` 挂载**：容器启动时自动执行此目录中的服务脚本（实现开机自启）
-3. **`BAMBU_URL` 环境变量**：可选，但强烈推荐设置，避免每次手动配置
-4. **端口映射**：
-   - `3000`: Bambu Studio Web 界面
-   - `1984`: go2rtc Web 管理界面
-   - `8554`: RTSP 视频流端口
-
-#### Docker CLI 示例
+首先，您需要登录一次来生成 API 令牌 (token)。在您的 Docker **宿主机**上执行以下命令进入容器并运行登录程序：
 
 ```bash
-docker run -d \
-  --name=bambustudio \
-  -e PUID=1000 \
-  -e PGID=1000 \
-  -e TZ=Asia/Shanghai \
-  -e DOCKER_MODS=linuxserver/mods:universal-package-install \
-  -e INSTALL_PACKAGES="gosu ffmpeg" \
-  -e BAMBU_URL="bambu:///tutk?uid=YOUR_PRINTER_UID&authkey=YOUR_AUTH_KEY" \
-  -p 3000:3000 \
-  -p 1984:1984 \
-  -p 8554:8554 \
-  -v /path/to/config:/config \
-  -v /path/to/host/custom-services.d:/custom-services.d \
-  --restart unless-stopped \
-  lscr.io/linuxserver/bambustudio:latest
+docker exec -it bambustudio /bin/bash -c "curl -sL https://raw.githubusercontent.com/ptbsare/bambusourcestreamer/main/start_bambu_fifo.sh | bash -s -- --login"
 ```
+根据提示输入您的 Bambu Lab 账户和密码。登录成功后，令牌会保存在容器的 `/config` 目录中，后续将自动使用。
 
-#### 启动容器
+**2. 安装并启动服务**
+
+将 `start_bambu_fifo.sh` 下载到容器的自动启动目录中。只需在**宿主机**上运行这一行命令：
 
 ```bash
-# 使用 Docker Compose
-docker-compose up -d
+mkdir -p /path/to/your/bambu/config/custom-services.d && \
+curl -sL -o /path/to/your/bambu/config/custom-services.d/bambu-streamer https://raw.githubusercontent.com/ptbsare/bambusourcestreamer/main/start_bambu_fifo.sh && \
+chmod +x /path/to/your/bambu/config/custom-services.d/bambu-streamer
+```
+> **注意**: 请将 `/path/to/your/bambu/config` 替换为您 Bambu Studio 容器实际的配置目录挂载路径。
 
-# 或使用 Docker CLI（使用上面的命令）
+**3. 重启容器**
+
+现在，只需重启您的 Bambu Studio 容器，服务便会自动安装所有依赖并启动。
+
+```bash
+docker restart bambustudio
 ```
 
-容器启动后，系统会自动：
-1. 安装 `gosu` 和 `ffmpeg` 依赖
-2. 执行 `/custom-services.d/bambu-streamer` 脚本
-3. 启动 FIFO feeder 和 go2rtc 服务
-4. 开始视频流传输
+### 环境变量 (可选)
 
-### BAMBU_URL 环境变量
+您可以通过环境变量来控制脚本的行为。
 
-`BAMBU_URL` 环境变量用于指定 Bambu Lab 打印机的连接 URL。
-
-**格式**：
-
-```
-bambu:///tutk?uid=PRINTER_UID&authkey=AUTH_KEY&passwd=ACCESS_CODE&region=REGION
-```
-
-**参数说明**：
-
-- `uid`: 打印机的唯一标识符（在打印机设置中查看）
-- `authkey`: 认证密钥
-- `passwd`: 访问码（LAN 模式下的访问码）
-- `region`: 区域（如 `us`, `cn`, `eu`）
-
-**优先级**：
-
-1. 环境变量 `BAMBU_URL`（最高优先级）
-2. `/config/.config/BambuStudio/cameratools/url.txt` 文件内容
-3. 脚本中的默认值（需要手动修改）
+-   `PRINTER_SERIAL`
+    -   **功能**: 指定要串流的打印机序列号。
+    -   **何时使用**: 当您的 Bambu Lab 账户下有**多台打印机**时，**必须**设置此变量来选择其中一台。
+    -   **示例**:
+        ```yaml
+        environment:
+          - PRINTER_SERIAL=01S00AXXXXXXXXXX
+        ```
 
 ### 访问视频流
 
 服务启动后，可以通过以下方式访问：
 
-- **Web UI**: http://localhost:1984/
-- **RTSP 流**: `rtsp://localhost:8554/bambulabx1c`
-- **WebRTC**: 在 Web UI 中选择 `bambulabx1c` 流
-
-### 故障排除
-
-**问题：bambu_source 不断重启**
-
-检查 `BAMBU_URL` 是否正确，确保：
-- UID 正确
-- 认证密钥有效
-- 网络连接正常
-
-**问题：go2rtc 无法读取 FIFO**
-
-确保：
-- FIFO feeder 正在运行
-- FIFO 文件已创建：`ls -l /tmp/bambu_video.fifo`
-
-**问题：无法访问 Web UI**
-
-检查端口映射是否正确，确保 Docker 容器的 1984 端口已映射到宿主机。
+-   **Web UI**: `http://<您的容器IP>:1984/`
+-   **RTSP 流**: `rtsp://<您的容器IP>:8554/bambulabx1c`
 
 ---
 
@@ -221,219 +90,78 @@ bambu:///tutk?uid=PRINTER_UID&authkey=AUTH_KEY&passwd=ACCESS_CODE&region=REGION
 
 ### Introduction
 
-Bambu Source Streamer is a video streaming solution for Bambu Lab 3D printers, specifically designed for LinuxServer.io's Bambu Studio Docker container. It uses FIFO (named pipe) and go2rtc to achieve efficient single-connection multi-client video streaming.
-
-**⚠️ Important Note**: This project is designed to **fix the Bambu Studio Go Live bug in Linux Docker environments** (where ffmpeg and bambu_source become zombie processes). If your Bambu Studio streaming works properly, you don't need this script.
-
-### Prerequisites
-
-Before using this script, you need to:
-
-1. **Enable Go Live in Bambu Studio Client**:
-   - Open Bambu Studio
-   - Go to printer settings page
-   - Find and click "Go Live" or streaming option
-   - Follow the prompts to download and install the "Virtual Camera Tools" plugin
-   - This step downloads necessary tools like `bambu_source` and `ffmpeg` to `/config/.config/BambuStudio/cameratools/`
-
-2. **Configure LinuxServer.io Container Dependencies**:
-   
-   Add the following environment variables to your Docker configuration to install required packages:
-   
-   ```yaml
-   environment:
-     - DOCKER_MODS=linuxserver/mods:universal-package-install
-     - INSTALL_PACKAGES=gosu ffmpeg
-   ```
-   
-   Package purposes:
-   - `gosu`: For switching users in containers (like sudo, but container-friendly)
-   - `ffmpeg`: For video stream processing
+Bambu Source Streamer is a highly automated video streaming service for Bambu Lab printers. It's designed for stable, long-term operation within Docker environments, especially the `linuxserver/bambustudio` container, fixing instability issues with the official "Go Live" feature.
 
 ### Features
 
-- ✅ **Single Connection Mode**: Only one connection to the printer regardless of client count
-- ✅ **Auto Reconnect**: Automatically restarts bambu_source on crashes
-- ✅ **Multi-Protocol Support**: RTSP, WebRTC, HLS, etc. via go2rtc
-- ✅ **Container Friendly**: Optimized for Docker environments
-- ✅ **Auto-Start**: Supports automatic startup with container
+- ✅ **One-Command Start**: A single script handles all dependency installation and configuration automatically.
+- ✅ **Auto URL Refresh**: Built-in credential refresh mechanism for long-term, stable streaming without manual intervention.
+- ✅ **Smart Printer Discovery**: Automatically detects printers under your account. No serial number configuration needed for single-printer users.
+- ✅ **Multi-Protocol Support**: Supports modern streaming protocols like RTSP, WebRTC, and HLS via go2rtc.
+- ✅ **Container-First Design**: Optimized for Docker and LinuxServer.io's auto-start service directory (`/custom-services.d`).
 
-### How It Works
+### Prerequisites
 
-```
-Printer ← (single connection) ← bambu_source → FIFO → go2rtc (ffmpeg) → Multiple Clients
-                                                        ↓
-                                              RTSP/WebRTC/HLS/...
-```
+1.  **Install Bambu Studio Plugin**:
+    - In your Bambu Studio desktop client or the web UI of your Docker container, navigate to the printer settings page.
+    - Click the **"Go Live"** option.
+    - Follow the prompts to download and install the **"Virtual Camera Tools"** plugin.
+    - **This is a mandatory step**, as it installs the core `bambu_source` binary.
 
-### Installation
+2.  **LinuxServer.io Container Dependencies**:
+    - Ensure your Docker `environment` includes `DOCKER_MODS` and `INSTALL_PACKAGES` to install `git`, `curl`, `unzip`, `jq`, `python3`, and `pip`.
+      ```yaml
+      environment:
+        - DOCKER_MODS=linuxserver/mods:universal-package-install
+        - INSTALL_PACKAGES=git curl unzip jq python3 python3-pip
+      ```
 
-#### 1. Download go2rtc
+### Quick Start (One-Command Deployment)
 
-Download the appropriate binary from [go2rtc releases](https://github.com/AlexxIT/go2rtc/releases).
+**1. Login (First-Time Use)**
 
-#### 2. Deploy to Container
-
-Copy files to Bambu Studio Docker container's configuration directory:
-
-```bash
-# Assuming your container mounts /config to a host directory
-# Target directory: /config/.config/BambuStudio/cameratools/
-
-# Copy files
-cp go2rtc /path/to/config/.config/BambuStudio/cameratools/
-cp go2rtc_fifo.yaml /path/to/config/.config/BambuStudio/cameratools/
-cp bambu_fifo_feeder.sh /path/to/config/.config/BambuStudio/cameratools/
-cp start_bambu_fifo.sh /path/to/config/.config/BambuStudio/cameratools/
-
-# Set permissions
-chmod +x /path/to/config/.config/BambuStudio/cameratools/go2rtc
-chmod +x /path/to/config/.config/BambuStudio/cameratools/bambu_fifo_feeder.sh
-chmod +x /path/to/config/.config/BambuStudio/cameratools/start_bambu_fifo.sh
-
-# Create custom service directory on host
-mkdir -p /path/to/host/custom-services.d/
-
-# Copy startup script to service directory
-cp start_bambu_fifo.sh /path/to/host/custom-services.d/bambu-streamer
-
-# Set permissions
-chmod +x /path/to/host/custom-services.d/bambu-streamer
-```
-
-### Usage (Docker Configuration)
-
-#### Complete Docker Compose Configuration
-
-Create a `docker-compose.yml` file:
-
-```yaml
-version: "3.8"
-
-services:
-  bambustudio:
-    image: lscr.io/linuxserver/bambustudio:latest
-    container_name: bambustudio
-    environment:
-      - PUID=1000
-      - PGID=1000
-      - TZ=Asia/Shanghai
-      # Install required dependencies (required)
-      - DOCKER_MODS=linuxserver/mods:universal-package-install
-      - INSTALL_PACKAGES=gosu ffmpeg
-      # Bambu printer connection URL (optional, recommended)
-      - BAMBU_URL=bambu:///tutk?uid=YOUR_PRINTER_UID&authkey=YOUR_AUTH_KEY
-    volumes:
-      - /path/to/config:/config                              # Config directory
-      - /path/to/host/custom-services.d:/custom-services.d  # Custom services (auto-start)
-    ports:
-      - 3000:3000      # Bambu Studio Web UI
-      - 1984:1984      # go2rtc Web UI
-      - 8554:8554      # RTSP Port
-    restart: unless-stopped
-```
-
-**Description**:
-
-1. **`/config` mount**: Stores Bambu Studio configuration and tool files
-2. **`/custom-services.d` mount**: Scripts in this directory are auto-executed on container startup
-3. **`BAMBU_URL` environment variable**: Optional but highly recommended to avoid manual configuration
-4. **Port mappings**:
-   - `3000`: Bambu Studio Web interface
-   - `1984`: go2rtc Web management interface
-   - `8554`: RTSP video stream port
-
-#### Docker CLI Example
+First, you need to log in once to generate an API token. Run the following command on your Docker **host** to enter the container and start the login process:
 
 ```bash
-docker run -d \
-  --name=bambustudio \
-  -e PUID=1000 \
-  -e PGID=1000 \
-  -e TZ=Asia/Shanghai \
-  -e DOCKER_MODS=linuxserver/mods:universal-package-install \
-  -e INSTALL_PACKAGES="gosu ffmpeg" \
-  -e BAMBU_URL="bambu:///tutk?uid=YOUR_PRINTER_UID&authkey=YOUR_AUTH_KEY" \
-  -p 3000:3000 \
-  -p 1984:1984 \
-  -p 8554:8554 \
-  -v /path/to/config:/config \
-  -v /path/to/host/custom-services.d:/custom-services.d \
-  --restart unless-stopped \
-  lscr.io/linuxserver/bambustudio:latest
+docker exec -it bambustudio /bin/bash -c "curl -sL https://raw.githubusercontent.com/ptbsare/bambusourcestreamer/main/start_bambu_fifo.sh | bash -s -- --login"
 ```
+Follow the prompts to enter your Bambu Lab account credentials. Once successful, the token will be saved in the container's `/config` volume for future automatic use.
 
-#### Start Container
+**2. Install and Start the Service**
+
+Download the `start_bambu_fifo.sh` script into the container's auto-start directory. Simply run this single command on your **host machine**:
 
 ```bash
-# Using Docker Compose
-docker-compose up -d
+mkdir -p /path/to/your/bambu/config/custom-services.d && \
+curl -sL -o /path/to/your/bambu/config/custom-services.d/bambu-streamer https://raw.githubusercontent.com/ptbsare/bambusourcestreamer/main/start_bambu_fifo.sh && \
+chmod +x /path/to/your/bambu/config/custom-services.d/bambu-streamer
+```
+> **Note**: Replace `/path/to/your/bambu/config` with the actual path to your Bambu Studio container's config volume mount.
 
-# Or using Docker CLI (use the command above)
+**3. Restart the Container**
+
+Now, just restart your Bambu Studio container. The service will automatically install all dependencies and start up.
+
+```bash
+docker restart bambustudio
 ```
 
-After the container starts, the system will automatically:
-1. Install `gosu` and `ffmpeg` dependencies
-2. Execute `/custom-services.d/bambu-streamer` script
-3. Start FIFO feeder and go2rtc services
-4. Begin video stream transmission
+### Environment Variables (Optional)
 
-### BAMBU_URL Environment Variable
+You can control the script's behavior with environment variables.
 
-The `BAMBU_URL` environment variable specifies the connection URL for Bambu Lab printers.
+-   `PRINTER_SERIAL`
+    -   **Function**: Specifies the serial number of the printer to stream.
+    -   **When to use**: This is **mandatory** if you have **multiple printers** under your Bambu Lab account.
+    -   **Example**:
+        ```yaml
+        environment:
+          - PRINTER_SERIAL=01S00AXXXXXXXXXX
+        ```
 
-**Format**:
+### Accessing the Stream
 
-```
-bambu:///tutk?uid=PRINTER_UID&authkey=AUTH_KEY&passwd=ACCESS_CODE&region=REGION
-```
+Once the service is running, you can access the video stream via:
 
-**Parameters**:
-
-- `uid`: Printer's unique identifier (check printer settings)
-- `authkey`: Authentication key
-- `passwd`: Access code (for LAN mode)
-- `region`: Region (e.g., `us`, `cn`, `eu`)
-
-**Priority**:
-
-1. `BAMBU_URL` environment variable (highest priority)
-2. Contents of `/config/.config/BambuStudio/cameratools/url.txt`
-3. Default value in script (requires manual modification)
-
-### Accessing Video Stream
-
-Once started, access via:
-
-- **Web UI**: http://localhost:1984/
-- **RTSP Stream**: `rtsp://localhost:8554/bambulabx1c`
-- **WebRTC**: Select `bambulabx1c` stream in Web UI
-
-### Troubleshooting
-
-**Issue: bambu_source keeps restarting**
-
-Check if `BAMBU_URL` is correct:
-- UID is correct
-- Auth key is valid
-- Network connection is stable
-
-**Issue: go2rtc cannot read FIFO**
-
-Ensure:
-- FIFO feeder is running
-- FIFO file exists: `ls -l /tmp/bambu_video.fifo`
-
-**Issue: Cannot access Web UI**
-
-Check port mapping, ensure Docker container's port 1984 is mapped to host.
-
----
-
-## License
-
-MIT License
-
-## Contributing
-
-Contributions are welcome! Please feel free to submit issues or pull requests.
+-   **Web UI**: `http://<your_container_ip>:1984/`
+-   **RTSP Stream**: `rtsp://<your_container_ip>:8554/bambulabx1c`
