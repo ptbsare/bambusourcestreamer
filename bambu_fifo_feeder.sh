@@ -2,7 +2,7 @@
 
 # == Bambu FIFO Feeder (Guardian) Script ==
 #
-# v3.0 - 实现了动态 URL 刷新、智能发现和错误日志捕获
+# v3.1 - 增加了 LD_LIBRARY_PATH 来加载 .so 依赖
 #
 # 功能:
 # 1. 持续监控并运行 bambu_source 进程
@@ -12,6 +12,7 @@
 
 # --- 配置 ---
 INSTALL_DIR="/config/.config/BambuStudio/cameratools"
+PLUGIN_DIR="/config/.config/BambuStudio/plugins" # .so 文件所在的目录
 BAMBU_SOURCE_BIN="$INSTALL_DIR/bambu_source"
 URL_GENERATOR_SCRIPT="$INSTALL_DIR/bambu_url_generator.py"
 FIFO_PATH="/tmp/bambu_video.fifo"
@@ -99,25 +100,22 @@ while true; do
     
     SAFE_URL=$(echo "$URL" | sed -e 's/passwd=[^&]*/passwd=*****/g' -e 's/authkey=[^&]*/authkey=*****/g')
     log "✅ 成功获取 URL: $SAFE_URL"
-    log "🚀 正在以 'abc' 用户身份启动 bambu_source..."
+    log "🚀 正在以 'abc' 用户身份启动 bambu_source (LD_LIBRARY_PATH=$PLUGIN_DIR)..."
 
-    # 创建一个临时文件来捕获 stderr
     ERR_LOG=$(mktemp)
     
-    # 使用 gosu 运行，stdout 重定向到 FIFO，stderr 重定向到临时文件
-    gosu abc "$BAMBU_SOURCE_BIN" "$URL" > "$FIFO_PATH" 2> "$ERR_LOG" &
+    # 使用 gosu 运行，并设置 LD_LIBRARY_PATH, 分离 stdout 和 stderr
+    gosu abc bash -c "export LD_LIBRARY_PATH='$PLUGIN_DIR'; '$BAMBU_SOURCE_BIN' '$URL'" > "$FIFO_PATH" 2> "$ERR_LOG" &
     BAMBU_SOURCE_PID=$!
     wait "$BAMBU_SOURCE_PID"
     EXIT_CODE=$?
     
-    # 读取并打印错误日志
     BAMBU_SOURCE_ERROR=$(cat "$ERR_LOG")
     rm -f "$ERR_LOG"
 
     log_warn "bambu_source 进程已退出 (退出码: $EXIT_CODE)。"
     if [ -n "$BAMBU_SOURCE_ERROR" ]; then
         log_warn "错误日志如下:"
-        # 逐行打印错误日志，增加缩进，使其更美观
         echo "$BAMBU_SOURCE_ERROR" | while IFS= read -r line; do log_warn "   | $line"; done
     fi
     
