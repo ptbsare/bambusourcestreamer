@@ -17,6 +17,7 @@ Bambu Source Streamer 是一个为 Bambu Lab 打印机设计的、高度自动�
 - ✅ **智能打印机发现**：自动检测账户下的打印机，单打印机用户无需配置序列号。
 - ✅ **多协议支持**：通过 go2rtc 支持 RTSP、WebRTC、HLS 等多种现代流媒体协议。
 - ✅ **容器化设计**：为 Docker 和 LinuxServer.io 的开机自启服务 (`/custom-services.d`) 优化。
+- ✅ **生命周期管理**：支持 `--update` 和 `--cleanup` 参数，方便更新和清理。
 
 ### 前置条件
 
@@ -24,28 +25,19 @@ Bambu Source Streamer 是一个为 Bambu Lab 打印机设计的、高度自动�
     - 在您的 Bambu Studio 桌面客户端或 Docker 容器的 Web UI 中，进入打印机设置页面。
     - 点击 **"Go Live"** (直播推流) 选项。
     - 按照提示，下载并安装 **"虚拟摄像头工具" (Virtual Camera Tools)** 插件。
-    - **这是必须的步骤**，因为它会安装核心的 `bambu_source` 二进制文件。
+    - **这是必须的步骤**，因为它会安装核心的 `bambu_source` 二进制文件及其依赖库。
 
 2.  **LinuxServer.io 容器依赖**:
-    - 确保您的 Docker `environment` 中包含 `DOCKER_MODS` 和 `INSTALL_PACKAGES`，以安装 `git`, `curl`, `unzip`, `jq`, `python3` 和 `pip`。
+    - 确保您的 Docker `environment` 中包含 `DOCKER_MODS` 和 `INSTALL_PACKAGES`，以安装脚本运行所需的核心工具。
       ```yaml
       environment:
         - DOCKER_MODS=linuxserver/mods:universal-package-install
-        - INSTALL_PACKAGES=git curl unzip jq python3 python3-pip
+        - INSTALL_PACKAGES=git curl unzip jq gosu python3 python3-pip
       ```
 
 ### 快速开始 (一键部署)
 
-**1. 登录 (首次使用)**
-
-首先，您需要登录一次来生成 API 令牌 (token)。在您的 Docker **宿主机**上执行以下命令进入容器并运行登录程序：
-
-```bash
-docker exec -it bambustudio /bin/bash -c "curl -sL https://raw.githubusercontent.com/ptbsare/bambusourcestreamer/main/start_bambu_fifo.sh | bash -s -- --login"
-```
-根据提示输入您的 Bambu Lab 账户和密码。登录成功后，令牌会保存在容器的 `/config` 目录中，后续将自动使用。
-
-**2. 安装并启动服务**
+**第 1 步：安装服务脚本**
 
 将 `start_bambu_fifo.sh` 下载到容器的自动启动目录中。只需在**宿主机**上运行这一行命令：
 
@@ -56,7 +48,16 @@ chmod +x /path/to/your/bambu/config/custom-services.d/bambu-streamer
 ```
 > **注意**: 请将 `/path/to/your/bambu/config` 替换为您 Bambu Studio 容器实际的配置目录挂载路径。
 
-**3. 重启容器**
+**第 2 步：首次登录**
+
+在**宿主机**上执行以下命令进入容器并运行登录程序，以生成 API 令牌 (token)：
+
+```bash
+docker exec -it bambustudio /custom-services.d/bambu-streamer --login
+```
+根据提示输入您的 Bambu Lab 账户和密码。登录成功后，令牌会保存在 `abc` 用户的 home 目录 (`/config/.bambu_token`) 中。
+
+**第 3 步：重启容器**
 
 现在，只需重启您的 Bambu Studio 容器，服务便会自动安装所有依赖并启动。
 
@@ -76,6 +77,19 @@ docker restart bambustudio
         environment:
           - PRINTER_SERIAL=01S00AXXXXXXXXXX
         ```
+
+### 脚本管理
+
+您可以通过 `docker exec` 和特定参数来管理服务。
+
+-   **更新脚本**: 从 GitHub 拉取最新的脚本和 Python 依赖。
+    ```bash
+    docker exec -it bambustudio /custom-services.d/bambu-streamer --update
+    ```
+-   **清理文件**: 删除所有由脚本安装的文件（脚本、配置、git缓存），保留用户安装的二进制文件。
+    ```bash
+    docker exec -it bambustudio /custom-services.d/bambu-streamer --cleanup
+    ```
 
 ### 访问视频流
 
@@ -99,6 +113,7 @@ Bambu Source Streamer is a highly automated video streaming service for Bambu La
 - ✅ **Smart Printer Discovery**: Automatically detects printers under your account. No serial number configuration needed for single-printer users.
 - ✅ **Multi-Protocol Support**: Supports modern streaming protocols like RTSP, WebRTC, and HLS via go2rtc.
 - ✅ **Container-First Design**: Optimized for Docker and LinuxServer.io's auto-start service directory (`/custom-services.d`).
+- ✅ **Lifecycle Management**: Supports `--update` and `--cleanup` for easy maintenance.
 
 ### Prerequisites
 
@@ -106,28 +121,19 @@ Bambu Source Streamer is a highly automated video streaming service for Bambu La
     - In your Bambu Studio desktop client or the web UI of your Docker container, navigate to the printer settings page.
     - Click the **"Go Live"** option.
     - Follow the prompts to download and install the **"Virtual Camera Tools"** plugin.
-    - **This is a mandatory step**, as it installs the core `bambu_source` binary.
+    - **This is a mandatory step**, as it installs the core `bambu_source` binary and its library dependencies.
 
 2.  **LinuxServer.io Container Dependencies**:
-    - Ensure your Docker `environment` includes `DOCKER_MODS` and `INSTALL_PACKAGES` to install `git`, `curl`, `unzip`, `jq`, `python3`, and `pip`.
+    - Ensure your Docker `environment` includes `DOCKER_MODS` and `INSTALL_PACKAGES` to install the core tools required by the script.
       ```yaml
       environment:
         - DOCKER_MODS=linuxserver/mods:universal-package-install
-        - INSTALL_PACKAGES=git curl unzip jq python3 python3-pip
+        - INSTALL_PACKAGES=git curl unzip jq gosu python3 python3-pip
       ```
 
 ### Quick Start (One-Command Deployment)
 
-**1. Login (First-Time Use)**
-
-First, you need to log in once to generate an API token. Run the following command on your Docker **host** to enter the container and start the login process:
-
-```bash
-docker exec -it bambustudio /bin/bash -c "curl -sL https://raw.githubusercontent.com/ptbsare/bambusourcestreamer/main/start_bambu_fifo.sh | bash -s -- --login"
-```
-Follow the prompts to enter your Bambu Lab account credentials. Once successful, the token will be saved in the container's `/config` volume for future automatic use.
-
-**2. Install and Start the Service**
+**Step 1: Install the Service Script**
 
 Download the `start_bambu_fifo.sh` script into the container's auto-start directory. Simply run this single command on your **host machine**:
 
@@ -138,7 +144,16 @@ chmod +x /path/to/your/bambu/config/custom-services.d/bambu-streamer
 ```
 > **Note**: Replace `/path/to/your/bambu/config` with the actual path to your Bambu Studio container's config volume mount.
 
-**3. Restart the Container**
+**Step 2: First-Time Login**
+
+Run the following command on your **host machine** to enter the container and perform an interactive login to generate your API token:
+
+```bash
+docker exec -it bambustudio /custom-services.d/bambu-streamer --login
+```
+Follow the prompts to enter your Bambu Lab account credentials. On success, the token will be saved in the `abc` user's home directory (`/config/.bambu_token`).
+
+**Step 3: Restart the Container**
 
 Now, just restart your Bambu Studio container. The service will automatically install all dependencies and start up.
 
@@ -158,6 +173,19 @@ You can control the script's behavior with environment variables.
         environment:
           - PRINTER_SERIAL=01S00AXXXXXXXXXX
         ```
+
+### Script Management
+
+You can manage the service via `docker exec` and specific flags.
+
+-   **Update Scripts**: Pull the latest scripts and Python dependencies from GitHub.
+    ```bash
+    docker exec -it bambustudio /custom-services.d/bambu-streamer --update
+    ```
+-   **Cleanup Files**: Remove all files installed by the script (scripts, configs, git cache), leaving user-installed binaries untouched.
+    ```bash
+    docker exec -it bambustudio /custom-services.d/bambu-streamer --cleanup
+    ```
 
 ### Accessing the Stream
 
