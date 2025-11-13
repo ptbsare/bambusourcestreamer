@@ -3,12 +3,14 @@ set -e
 
 # == Bambu Streamer Service Script ==
 #
+# v2.2 - 增强了 cleanup 功能
+#
 # 功能:
-# 1. 自动安装脚本和依赖 (go2rtc, git repos, etc.)
-# 2. 校验用户是否已安装 Bambu Studio 插件
-# 3. 提供 --login 选项进行云端认证
-# 4. 启动和管理 bambu_source 和 go2rtc 服务
-# 5. 实现 URL 自动刷新机制
+# 1. 自动安装/校验依赖 (go2rtc, git repos, user plugins)
+# 2. --login: 交互式登录 Bambu Cloud
+# 3. --update: 从 Git 更新脚本
+# 4. --cleanup: 清理所有由本脚本生成的文件
+# 5. (默认) 启动和管理 bambu_source 和 go2rtc 服务, 实现 URL 自动刷新
 
 # --- 全局配置 ---
 INSTALL_DIR="/config/.config/BambuStudio/cameratools"
@@ -28,90 +30,89 @@ FEEDER_PID_FILE="/tmp/bambu_fifo_feeder.pid"
 
 # --- 模块化函数 ---
 
-log() {
-    echo "[$(date +'%Y-%m-%d %H:%M:%S')] $1"
-}
+log() { echo "[$(date +'%Y-%m-%d %H:%M:%S')] $1"; }
 
-# 依赖检查与安装模块
 install_and_verify_dependencies() {
     log "🔎 正在检查和安装依赖项..."
     mkdir -p "$INSTALL_DIR"
 
-    # 1. 检查核心工具 (git, curl, unzip, jq)
     for cmd in git curl unzip jq gosu; do
         if ! command -v $cmd &> /dev/null; then
             log "📦 未找到 '$cmd'，正在尝试使用 apt 安装..."
-            if command -v apt-get &> /dev/null; then
-                apt-get update && apt-get install -y $cmd
-            else
-                log "❌ 无法自动安装 '$cmd'。请手动安装后重试。"
-                exit 1
-            fi
+            if command -v apt-get &> /dev/null; then apt-get update && apt-get install -y $cmd; else
+                log "❌ 无法自动安装 '$cmd'。请手动安装后重试。"; exit 1; fi
         fi
     done
 
-    # 2. 校验用户是否已安装 Bambu Studio 插件
     if [ ! -f "$BAMBU_SOURCE_BIN" ]; then
-        log "❌ 错误：核心组件 '$BAMBU_SOURCE_BIN' 未找到。"
-        log "   请打开 Bambu Studio，进入打印机设置页面，点击 'Go Live' (直播推流)，"
-        log "   并根据提示下载安装 '虚拟摄像头工具' (Virtual Camera Tools) 插件。"
-        exit 1
-    else
-        log "✅ bambu_source 已由用户安装。"
-    fi
+        log "❌ 错误：核心组件 '$BAMBU_SOURCE_BIN' 未找到。";
+        log "   请打开 Bambu Studio -> Go Live -> 安装 '虚拟摄像头工具' 插件。"; exit 1;
+    else log "✅ bambu_source 已由用户安装。"; fi
 
-    # 3. 下载并安装 go2rtc
     if [ ! -f "$GO2RTC_BIN" ]; then
-        log "📦 正在下载最新版 go2rtc..."
-        CPU_ARCH=$(uname -m)
-        case $CPU_ARCH in
-            "x86_64") GO2RTC_ARCH="linux_amd64";;
-            "aarch64") GO2RTC_ARCH="linux_arm64";;
-            "armv7l") GO2RTC_ARCH="linux_armv7";;
-            *) log "❌ 不支持的 CPU 架构: $CPU_ARCH"; exit 1;;
-        esac
+        log "📦 正在下载最新版 go2rtc..."; CPU_ARCH=$(uname -m);
+        case $CPU_ARCH in "x86_64") GO2RTC_ARCH="linux_amd64";; "aarch64") GO2RTC_ARCH="linux_arm64";;
+            "armv7l") GO2RTC_ARCH="linux_armv7";; *) log "❌ 不支持的 CPU 架构: $CPU_ARCH"; exit 1;; esac
         API_URL="https://api.github.com/repos/$GO2RTC_REPO/releases/latest"
         DOWNLOAD_URL=$(curl -s $API_URL | jq -r ".assets[] | select(.name | endswith(\"$GO2RTC_ARCH\")) | .browser_download_url")
         if [ -z "$DOWNLOAD_URL" ]; then log "❌ 无法找到 go2rtc 下载链接。" && exit 1; fi
-        curl -sL "$DOWNLOAD_URL" -o "$GO2RTC_BIN"
-        chmod +x "$GO2RTC_BIN"
-        log "✅ go2rtc 下载完成。"
-    else
-        log "✅ go2rtc 已存在。"
-    fi
+        curl -sL "$DOWNLOAD_URL" -o "$GO2RTC_BIN"; chmod +x "$GO2RTC_BIN"; log "✅ go2rtc 下载完成。";
+    else log "✅ go2rtc 已存在。"; fi
 
-    # 4. 克隆 bambusourcestreamer 仓库以获取脚本和配置
     if [ ! -d "$BAMBU_STREAMER_SRC_DIR" ]; then
         log "📦 克隆 bambusourcestreamer (depth=1)..."
         git clone --depth=1 "$BAMBU_STREAMER_REPO" "$BAMBU_STREAMER_SRC_DIR"
-    else
-        log "✅ bambusourcestreamer 仓库已存在。"
-    fi
-    log "正在从源码同步脚本和配置..."
+    else log "✅ bambusourcestreamer 仓库已存在。"; fi
+    log "正在从源码同步脚本和配置...";
     cp "$BAMBU_STREAMER_SRC_DIR/bambu_fifo_feeder.sh" "$FEEDER_SCRIPT"
     cp "$BAMBU_STREAMER_SRC_DIR/bambu_url_generator.py" "$URL_GENERATOR_SCRIPT"
     cp "$BAMBU_STREAMER_SRC_DIR/go2rtc_fifo.yaml" "$CONFIG_FILE"
     chmod +x "$FEEDER_SCRIPT"
 
-    # 5. 克隆并安装 Bambu-Lab-Cloud-API 库
     if [ ! -d "$BAMBU_CLOUD_API_DIR" ]; then
         log "📦 克隆 Bambu-Lab-Cloud-API (depth=1)..."
         git clone --depth=1 "$BAMBU_CLOUD_API_REPO" "$BAMBU_CLOUD_API_DIR"
-    else
-        log "✅ Bambu-Lab-Cloud-API 仓库已存在。"
-    fi
-    log "🐍 正在将 Bambu-Lab-Cloud-API 安装为 Python 包..."
-    pip install "$BAMBU_CLOUD_API_DIR"
-
+    else log "✅ Bambu-Lab-Cloud-API 仓库已存在。"; fi
+    log "🐍 正在将 Bambu-Lab-Cloud-API 安装为 Python 包..."; pip install "$BAMBU_CLOUD_API_DIR"
     log "✅ 所有依赖项均已满足。"
 }
 
 login_to_bambu_cloud() {
     install_and_verify_dependencies
-    log "🔑 切换到 'abc' 用户进行交互式登录..."
-    log "   请根据接下来的提示操作。"
+    log "🔑 切换到 'abc' 用户进行交互式登录..."; log "   请根据接下来的提示操作。"
     gosu abc python3 "$URL_GENERATOR_SCRIPT" --login
-    log "✅ 登录流程完成。"
+    log "✅ 登录流程完成。"; exit 0
+}
+
+update_scripts() {
+    log "🔄 正在从 Git 更新脚本..."
+    if [ -d "$BAMBU_STREAMER_SRC_DIR" ]; then
+        cd "$BAMBU_STREAMER_SRC_DIR"; git pull; cd - > /dev/null;
+        log "正在从源码同步脚本和配置...";
+        cp "$BAMBU_STREAMER_SRC_DIR/bambu_fifo_feeder.sh" "$FEEDER_SCRIPT"
+        cp "$BAMBU_STREAMER_SRC_DIR/bambu_url_generator.py" "$URL_GENERATOR_SCRIPT"
+        cp "$BAMBU_STREAMER_SRC_DIR/go2rtc_fifo.yaml" "$CONFIG_FILE"
+        chmod +x "$FEEDER_SCRIPT"
+        log "✅ 脚本更新完成。"
+    else
+        log "⚠️  未找到源码目录，请先运行一次安装。"; exit 1;
+    fi
+    if [ -d "$BAMBU_CLOUD_API_DIR" ]; then
+        cd "$BAMBU_CLOUD_API_DIR"; git pull; cd - > /dev/null;
+        log "🐍 正在更新 Python 包..."; pip install --upgrade "$BAMBU_CLOUD_API_DIR"
+        log "✅ Python 包更新完成。"
+    else
+        log "⚠️  未找到 API 库目录，请先运行一次安装。"; exit 1;
+    fi
+    exit 0
+}
+
+cleanup_files() {
+    log "🧹 正在进行彻底清理..."
+    rm -f "$FEEDER_SCRIPT" "$URL_GENERATOR_SCRIPT" "$CONFIG_FILE" "$GO2RTC_BIN"
+    rm -rf "$BAMBU_STREAMER_SRC_DIR" "$BAMBU_CLOUD_API_DIR"
+    log "✅ 清理完成。"
+    log "   保留的内容: $BAMBU_SOURCE_BIN (由用户通过 Bambu Studio 插件安装)。"
     exit 0
 }
 
@@ -119,84 +120,48 @@ start_service() {
     cd "$INSTALL_DIR" || (log "❌ 无法进入安装目录: $INSTALL_DIR" && exit 1)
     log "🚀 Bambu FIFO + go2rtc 服务启动..."
     
-    cleanup() {
-        log "🛑 正在停止所有服务..."
-        # 检查 PID 文件是否存在
+    cleanup_processes() {
+        log "🛑 正在停止所有服务...";
         if [ -f "$FEEDER_PID_FILE" ]; then
             FEEDER_PID=$(cat "$FEEDER_PID_FILE" 2>/dev/null)
-            # 检查进程是否真的在运行
             if [ -n "$FEEDER_PID" ] && kill -0 "$FEEDER_PID" 2>/dev/null; then
-                log "向 FIFO feeder (PID: $FEEDER_PID) 发送 SIGTERM 信号..."
-                # 向子进程发送终止信号，让它自己清理
-                kill -TERM "$FEEDER_PID"
-                # 等待子进程优雅退出，设置超时
-                wait "$FEEDER_PID"
-                log "✅ FIFO feeder 已停止。"
-            fi
-            # 清理 PID 文件
-            rm -f "$FEEDER_PID_FILE"
+                log "向 FIFO feeder (PID: $FEEDER_PID) 发送 SIGTERM 信号...";
+                kill -TERM "$FEEDER_PID"; wait "$FEEDER_PID"; log "✅ FIFO feeder 已停止。";
+            fi; rm -f "$FEEDER_PID_FILE"
         fi
-        
-        # 清理 FIFO 文件
-        rm -f /tmp/bambu_video.fifo
-        
-        log "✅ 所有服务已清理完毕。"
-        # exit 0 # 不在这里退出，让脚本自然结束
+        rm -f /tmp/bambu_video.fifo; log "✅ 所有服务已清理完毕。"
     }
+    trap 'cleanup_processes' SIGINT SIGTERM
 
-    # trap 会在脚本接收到信号时执行 cleanup, 然后 go2rtc 停止, 脚本最终会退出
-    trap 'cleanup' SIGINT SIGTERM
-
-    if [ -f "$FEEDER_PID_FILE" ]; then
-        OLD_PID=$(cat "$FEEDER_PID_FILE")
-        if kill -0 "$OLD_PID" 2>/dev/null; then
-            log "⚠️ FIFO feeder 已在运行 (PID: $OLD_PID)。"
-            SKIP_FEEDER=true
-        else
-            rm -f "$FEEDER_PID_FILE"
-        fi
-    fi
+    if [ -f "$FEEDER_PID_FILE" ] && kill -0 "$(cat $FEEDER_PID_FILE 2>/dev/null)" 2>/dev/null; then
+        log "⚠️ FIFO feeder 已在运行 (PID: $(cat $FEEDER_PID_FILE))。"; SKIP_FEEDER=true;
+    else rm -f "$FEEDER_PID_FILE"; fi
 
     if [ "$SKIP_FEEDER" != "true" ]; then
-        log "🎥 启动 FIFO feeder..."
-        "$FEEDER_SCRIPT" &
-        FEEDER_PID=$!
-        echo $FEEDER_PID > "$FEEDER_PID_FILE"
-        log "✅ FIFO feeder 已启动 (PID: $FEEDER_PID)"
-        sleep 2
+        log "🎥 启动 FIFO feeder..."; "$FEEDER_SCRIPT" &
+        FEEDER_PID=$!; echo $FEEDER_PID > "$FEEDER_PID_FILE";
+        log "✅ FIFO feeder 已启动 (PID: $FEEDER_PID)"; sleep 2;
     fi
 
-    log "🌐 启动 go2rtc 服务器..."
-    log "访问方式:"
-    log "  Web UI:  http://localhost:1984/"
-    log "  RTSP:    rtsp://localhost:8554/bambulabx1c"
-    log "按 Ctrl+C 停止所有服务"
+    log "🌐 启动 go2rtc 服务器...";
+    log "  Web UI:  http://localhost:1984/"; log "  RTSP:    rtsp://localhost:8554/bambulabx1c"
 
     "$GO2RTC_BIN" -config "$CONFIG_FILE" &
-    GO2RTC_PID=$!
-
-    # 等待 go2rtc 进程退出
-    wait "$GO2RTC_PID"
-
-    # go2rtc 退出后，执行最终清理
-    cleanup
+    GO2RTC_PID=$!; wait "$GO2RTC_PID";
+    cleanup_processes
 }
 
-# --- 主逻辑：参数解析 ---
-# 将此脚本自身复制到服务目录，以便 docker-mods 调用
+# --- 主逻辑 ---
 if [[ -d "/custom-services.d" && ! -f "/custom-services.d/bambu-streamer" ]]; then
     log "正在安装服务以便容器启动时自动运行..."
     cp "${BASH_SOURCE[0]}" /custom-services.d/bambu-streamer
     chmod +x /custom-services.d/bambu-streamer
 fi
 
-if [ "$1" == "--login" ]; then
-    login_to_bambu_cloud
-elif [ "$1" == "--install" ]; then
-    install_and_verify_dependencies
-    log "✅ 安装/校验完成。"
-    exit 0
-else
-    install_and_verify_dependencies
-    start_service
-fi
+case "$1" in
+    --login)    login_to_bambu_cloud;;
+    --install)  install_and_verify_dependencies; log "✅ 安装/校验完成。"; exit 0;;
+    --update)   update_scripts;;
+    --cleanup)  cleanup_files;;
+    *)          install_and_verify_dependencies; start_service;;
+esac
