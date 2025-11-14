@@ -21,8 +21,8 @@ from pathlib import Path
 try:
     from bambulab import BambuAuthenticator, BambuClient, BambuAPIError
 except ImportError:
-    print("ERROR: The 'Bambu-Lab-Cloud-API' library is required.", file=sys.stderr)
-    print("Please ensure it is installed and accessible.", file=sys.stderr)
+    print("ERROR: The 'Bambu-Lab-Cloud-API' library is required. (需要 'Bambu-Lab-Cloud-API' 库)", file=sys.stderr)
+    print("Please ensure it is installed and accessible. (请确保已安装并可访问)", file=sys.stderr)
     sys.exit(1)
 
 # These values seem to be client-specific and are hardcoded based on a working example
@@ -108,20 +108,20 @@ def main():
 
     # --- 1. Handle Interactive Login ---
     if args.login:
-        print("Bambu Lab Interactive Login")
-        print("===========================")
+        print("Bambu Lab Interactive Login (Bambu Lab 交互式登录)")
+        print("===================================================")
         try:
             import getpass
-            username = input("Enter your Bambu Lab email: ")
-            password = getpass.getpass("Enter your password: ")
+            username = input("Enter your Bambu Lab email (输入您的Bambu Lab邮箱): ")
+            password = getpass.getpass("Enter your password (输入您的密码): ")
             token = auth.login(username, password)
-            print("✅ Login successful! Token has been saved for future use.")
+            print("✅ Login successful! Token has been saved for future use. (登录成功! Token已保存供将来使用)")
             return 0
         except BambuAPIError as e:
-            print(f"❌ Login failed: {e}", file=sys.stderr)
+            print(f"❌ Login failed (登录失败): {e}", file=sys.stderr)
             return 1
         except (EOFError, KeyboardInterrupt):
-            print("\nLogin cancelled.", file=sys.stderr)
+            print("\nLogin cancelled. (登录已取消)", file=sys.stderr)
             return 1
 
     # In discover mode, it should always be non-interactive
@@ -129,21 +129,21 @@ def main():
 
     # Only print titles in full interactive mode
     if is_interactive:
-        print("Bambu Lab Cloud URL Generator")
-        print("=============================")
+        print("Bambu Lab Cloud URL Generator (Bambu Lab 云端URL生成器)")
+        print("======================================================")
 
     # --- 2. Authentication (using saved token) ---
     try:
         token = auth.get_or_create_token()
         # Only print status in full interactive mode
         if is_interactive:
-            print("✅ Authenticated using saved token.")
+            print("✅ Authenticated using saved token. (使用已保存的Token进行认证)")
     except BambuAPIError as e:
        # Custom error handling for scripting
        if "No valid saved token found" in str(e):
-           print("ERROR: NO_TOKEN_FOUND", file=sys.stderr)
+           print("ERROR: NO_TOKEN_FOUND (未找到Token)", file=sys.stderr)
        else:
-           print(f"ERROR: AUTH_FAILED: {e}", file=sys.stderr)
+           print(f"ERROR: AUTH_FAILED (认证失败): {e}", file=sys.stderr)
        return 1
 
     # --- 3. Get Devices ---
@@ -153,10 +153,10 @@ def main():
         if not devices:
             # For discover, printing nothing is a valid empty list.
             if not args.discover:
-               print("❌ No printers found in your account.", file=sys.stderr)
+               print("❌ No printers found in your account. (您的账户下未找到任何打印机)", file=sys.stderr)
             return 0 # Exit cleanly with no output if no devices found
     except BambuAPIError as e:
-        print(f"❌ Failed to get devices: {e}", file=sys.stderr)
+        print(f"❌ Failed to get devices (获取设备列表失败): {e}", file=sys.stderr)
         return 1
 
     # --- Handle Discovery Mode ---
@@ -172,26 +172,26 @@ def main():
     if args.serial:
         selected_device = next((d for d in devices if d.get('dev_id') == args.serial), None)
         if not selected_device:
-            print(f"❌ Printer with serial '{args.serial}' not found.", file=sys.stderr)
+            print(f"❌ Printer with serial '{args.serial}' not found. (未找到序列号为 '{args.serial}' 的打印机)", file=sys.stderr)
             return 1
     elif is_interactive:
-        print("\nAvailable printers:")
+        print("\nAvailable printers (可用打印机):")
         for idx, device in enumerate(devices, 1):
             name = device.get('name', 'Unknown')
             model = device.get('dev_product_name', 'Unknown')
             serial = device.get('dev_id', 'N/A')
             online = device.get('online', False)
-            status = "Online" if online else "Offline"
+            status = "Online (在线)" if online else "Offline (离线)"
             print(f"{idx}. {name} ({model}) - {status}")
-            print(f"   Serial: {serial}")
+            print(f"   Serial (序列号): {serial}")
 
         if len(devices) > 1:
             try:
-                choice = int(input(f"\nSelect a printer (1-{len(devices)}): ")) - 1
+                choice = int(input(f"\nSelect a printer (选择一台打印机) (1-{len(devices)}): ")) - 1
                 if not 0 <= choice < len(devices):
                     raise ValueError
             except (ValueError, EOFError):
-                print("❌ Invalid selection.", file=sys.stderr)
+                print("❌ Invalid selection. (无效选择)", file=sys.stderr)
                 return 1
         else:
             choice = 0
@@ -201,23 +201,23 @@ def main():
         selected_device = next((d for d in devices if d.get('online')), devices[0])
 
     if is_interactive:
-        print(f"\nSelected: {selected_device.get('name')}")
-        print("Fetching camera credentials...")
+        print(f"\nSelected (已选择): {selected_device.get('name')}")
+        print("Fetching camera credentials... (正在获取摄像头凭证...)")
 
     # --- 5. Get URL ---
     try:
         bambu_url = get_full_url(client, selected_device, args.quiet or args.discover)
     except (BambuAPIError, ValueError) as e:
-        print(f"❌ Failed to generate URL: {e}", file=sys.stderr)
+        print(f"❌ Failed to generate URL (生成URL失败): {e}", file=sys.stderr)
         return 1
 
     # --- 6. Output ---
     if is_interactive:
         print("\n" + "="*50)
-        print("✅ Bambu Source URL Generated:")
+        print("✅ Bambu Source URL Generated (Bambu Source URL已生成):")
         print(bambu_url)
         print("="*50)
-        print("\nUse this URL with bambu_source or in your scripts.")
+        print("\nUse this URL with bambu_source or in your scripts. (请在bambu_source或您的脚本中使用此URL)")
     else:
         # In non-interactive or quiet mode, print only the URL to stdout
         print(bambu_url)
@@ -230,5 +230,5 @@ if __name__ == '__main__':
     except KeyboardInterrupt:
         # Avoid printing a messy stack trace on Ctrl+C
         if sys.stdout.isatty():
-            print("\nInterrupted by user.", file=sys.stderr)
+            print("\nInterrupted by user. (用户中断)", file=sys.stderr)
         sys.exit(1)
