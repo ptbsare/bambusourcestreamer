@@ -30,7 +30,7 @@ except ImportError:
 # require different values.
 NET_VER = "02.03.01.52"
 CLI_VER = "02.03.01.51"
-CLI_ID = "f05f5cdd-e15a-4dc6-8f2e-4af89c4417c1"
+CLI_ID = str(uuid.uuid4())
 
 def get_full_url(client: BambuClient, device: dict, quiet: bool) -> str:
     """Fetches camera credentials and constructs the full URL."""
