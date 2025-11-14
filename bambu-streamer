@@ -3,7 +3,7 @@ set -e
 
 # == Bambu Streamer Service Script ==
 #
-# v2.2 - 增强了 cleanup 功能
+# v2.3 - 更新流名称为 'bambu'
 #
 # 功能:
 # 1. 自动安装/校验依赖 (go2rtc, git repos, user plugins)
@@ -144,7 +144,7 @@ start_service() {
     fi
 
     log "🌐 启动 go2rtc 服务器...";
-    log "  Web UI:  http://localhost:1984/"; log "  RTSP:    rtsp://localhost:8554/bambulabx1c"
+    log "  Web UI:  http://localhost:1984/"; log "  RTSP:    rtsp://localhost:8554/bambu"
 
     "$GO2RTC_BIN" -config "$CONFIG_FILE" &
     GO2RTC_PID=$!; wait "$GO2RTC_PID";

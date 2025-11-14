@@ -37,33 +37,39 @@ Bambu Source Streamer 是一个为 Bambu Lab 打印机设计的、高度自动�
 
 ### 快速开始 (一键部署)
 
-**第 1 步：安装服务脚本**
+**第 1 步：持久化服务目录 (推荐)**
 
-将 `start_bambu_fifo.sh` 下载到容器的自动启动目录中。只需在**宿主机**上运行这一行命令：
+为了确保脚本在容器更新后仍然存在，强烈建议您将 `/custom-services.d` 目录也挂载到宿主机。修改您的 `docker-compose.yml` 或 `docker run` 命令，添加一个 volume 挂载：
+
+```yaml
+# docker-compose.yml 示例
+volumes:
+  - /path/to/your/bambu/config:/config
+  - /path/to/your/bambu/custom-services:/custom-services.d # <--- 添加此行
+```
+
+**第 2 步：安装并登录 (一行命令)**
+
+在**宿主机**上执行以下命令。它会自动下载服务脚本到正确的位置、设置权限，然后启动一次交互式登录。
 
 ```bash
-mkdir -p /path/to/your/bambu/config/custom-services.d && \
-curl -sL -o /path/to/your/bambu/config/custom-services.d/bambu-streamer https://raw.githubusercontent.com/ptbsare/bambusourcestreamer/main/start_bambu_fifo.sh && \
-chmod +x /path/to/your/bambu/config/custom-services.d/bambu-streamer
+docker exec -it bambustudio bash -c "mkdir -p /custom-services.d && curl -sL -o /custom-services.d/bambu-streamer https://raw.githubusercontent.com/ptbsare/bambusourcestreamer/main/bambu-streamer && chmod +x /custom-services.d/bambu-streamer && /custom-services.d/bambu-streamer --login"
 ```
-> **注意**: 请将 `/path/to/your/bambu/config` 替换为您 Bambu Studio 容器实际的配置目录挂载路径。
-
-**第 2 步：首次登录**
-
-在**宿主机**上执行以下命令进入容器并运行登录程序，以生成 API 令牌 (token)：
-
-```bash
-docker exec -it bambustudio /custom-services.d/bambu-streamer --login
-```
-根据提示输入您的 Bambu Lab 账户和密码。登录成功后，令牌会保存在 `abc` 用户的 home 目录 (`/config/.bambu_token`) 中。
 
 **第 3 步：重启容器**
 
-现在，只需重启您的 Bambu Studio 容器，服务便会自动安装所有依赖并启动。
+登录成功后，只需重启您的 Bambu Studio 容器，服务便会自动安装所有依赖并启动。
 
 ```bash
 docker restart bambustudio
 ```
+
+### `/custom-services.d` 的作用
+
+在 `linuxserver.io` 系列的 Docker 容器中，`/custom-services.d` 是一个特殊的目录，用于实现**开机自启**功能。
+
+-   **工作原理**: 容器在启动时，会检查这个目录中是否存在可执行文件。如果存在，它会按照文件名顺序**自动执行**这些脚本。
+-   **为什么使用它**: 通过将 `bambu-streamer` 脚本放置在此目录，我们确保了每次容器（意外或计划内）重启后，视频流服务都能被自动拉起，实现了真正的“无人值守”服务。
 
 ### 环境变量 (可选)
 
@@ -86,7 +92,7 @@ docker restart bambustudio
     ```bash
     docker exec -it bambustudio /custom-services.d/bambu-streamer --update
     ```
--   **清理文件**: 删除所有由脚本安装的文件（脚本、配置、git缓存），保留用户安装的二进制文件。
+-   **清理文件**: 删除所有由脚本安装的文件（脚本、配置、二进制、git缓存）。
     ```bash
     docker exec -it bambustudio /custom-services.d/bambu-streamer --cleanup
     ```
@@ -96,7 +102,7 @@ docker restart bambustudio
 服务启动后，可以通过以下方式访问：
 
 -   **Web UI**: `http://<您的容器IP>:1984/`
--   **RTSP 流**: `rtsp://<您的容器IP>:8554/bambulabx1c`
+-   **RTSP 流**: `rtsp://<您的容器IP>:8554/bambu`
 
 ---
 
@@ -133,33 +139,39 @@ Bambu Source Streamer is a highly automated video streaming service for Bambu La
 
 ### Quick Start (One-Command Deployment)
 
-**Step 1: Install the Service Script**
+**Step 1: Persist the Service Directory (Recommended)**
 
-Download the `start_bambu_fifo.sh` script into the container's auto-start directory. Simply run this single command on your **host machine**:
+To ensure the script persists across container updates, it's highly recommended to mount the `/custom-services.d` directory to your host. Modify your `docker-compose.yml` or `docker run` command to add a volume mount:
+
+```yaml
+# docker-compose.yml example
+volumes:
+  - /path/to/your/bambu/config:/config
+  - /path/to/your/bambu/custom-services:/custom-services.d # <--- Add this line
+```
+
+**Step 2: Install and Login (One Command)**
+
+Run the following command on your **host machine**. It will automatically download the service script to the correct location, set its permissions, and then start an interactive login process.
 
 ```bash
-mkdir -p /path/to/your/bambu/config/custom-services.d && \
-curl -sL -o /path/to/your/bambu/config/custom-services.d/bambu-streamer https://raw.githubusercontent.com/ptbsare/bambusourcestreamer/main/start_bambu_fifo.sh && \
-chmod +x /path/to/your/bambu/config/custom-services.d/bambu-streamer
+docker exec -it bambustudio bash -c "mkdir -p /custom-services.d && curl -sL -o /custom-services.d/bambu-streamer https://raw.githubusercontent.com/ptbsare/bambusourcestreamer/main/bambu-streamer && chmod +x /custom-services.d/bambu-streamer && /custom-services.d/bambu-streamer --login"
 ```
-> **Note**: Replace `/path/to/your/bambu/config` with the actual path to your Bambu Studio container's config volume mount.
-
-**Step 2: First-Time Login**
-
-Run the following command on your **host machine** to enter the container and perform an interactive login to generate your API token:
-
-```bash
-docker exec -it bambustudio /custom-services.d/bambu-streamer --login
-```
-Follow the prompts to enter your Bambu Lab account credentials. On success, the token will be saved in the `abc` user's home directory (`/config/.bambu_token`).
 
 **Step 3: Restart the Container**
 
-Now, just restart your Bambu Studio container. The service will automatically install all dependencies and start up.
+After a successful login, simply restart your Bambu Studio container. The service will automatically install all dependencies and start up.
 
 ```bash
 docker restart bambustudio
 ```
+
+### The Role of `/custom-services.d`
+
+In the `linuxserver.io` family of Docker containers, `/custom-services.d` is a special directory used to achieve **auto-start** functionality.
+
+-   **How it works**: When the container starts, it checks for executable files within this directory. If found, it automatically executes these scripts in alphabetical order.
+-   **Why we use it**: By placing the `bambu-streamer` script here, we ensure that the video streaming service is automatically launched every time the container is restarted (whether planned or unplanned), achieving a true "unattended" service.
 
 ### Environment Variables (Optional)
 
@@ -182,7 +194,7 @@ You can manage the service via `docker exec` and specific flags.
     ```bash
     docker exec -it bambustudio /custom-services.d/bambu-streamer --update
     ```
--   **Cleanup Files**: Remove all files installed by the script (scripts, configs, git cache), leaving user-installed binaries untouched.
+-   **Cleanup Files**: Remove all files installed by the script (scripts, configs, binaries, git cache).
     ```bash
     docker exec -it bambustudio /custom-services.d/bambu-streamer --cleanup
     ```
@@ -192,4 +204,4 @@ You can manage the service via `docker exec` and specific flags.
 Once the service is running, you can access the video stream via:
 
 -   **Web UI**: `http://<your_container_ip>:1984/`
--   **RTSP Stream**: `rtsp://<your_container_ip>:8554/bambulabx1c`
+-   **RTSP Stream**: `rtsp://<your_container_ip>:8554/bambu`
