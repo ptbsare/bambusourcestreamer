@@ -41,6 +41,7 @@ docker run -d \
   -e INSTALL_PACKAGES="git curl unzip jq gosu python3 python3-pip" \
   `# -e PRINTER_SERIAL="YOUR_PRINTER_SERIAL"` \
   -p 3000:3000 \
+  -p 3001:3001 \
   -p 1984:1984 \
   -p 8554:8554 \
   -p 8555:8555/udp \
@@ -67,7 +68,8 @@ services:
       - INSTALL_PACKAGES=git curl unzip jq gosu python3 python3-pip
       # - PRINTER_SERIAL=YOUR_PRINTER_SERIAL # 如果您有多台打印机，请取消此行注释并填入序列号
     ports:
-      - "3000:3000" # Bambu Studio Web UI
+      - "3000:3000" # Bambu Studio desktop gui HTTP, must be proxied.
+      - "3001:3001" # Bambu Studio desktop gui HTTPS.
       - "1984:1984" # go2rtc Web UI
       - "8554:8554" # RTSP
       - "8555:8555/udp" # WebRTC
@@ -159,6 +161,7 @@ docker run -d \
   -e INSTALL_PACKAGES="git curl unzip jq gosu python3 python3-pip" \
   `# -e PRINTER_SERIAL="YOUR_PRINTER_SERIAL"` \
   -p 3000:3000 \
+  -p 3001:3001 \
   -p 1984:1984 \
   -p 8554:8554 \
   -p 8555:8555/udp \
@@ -185,7 +188,8 @@ services:
       - INSTALL_PACKAGES=git curl unzip jq gosu python3 python3-pip
       # - PRINTER_SERIAL=YOUR_PRINTER_SERIAL # Uncomment and fill if you have multiple printers
     ports:
-      - "3000:3000" # Bambu Studio Web UI
+      - "3000:3000" # Bambu Studio desktop gui HTTP, must be proxied.
+      - "3001:3001" # Bambu Studio desktop gui HTTPS.
       - "1984:1984" # go2rtc Web UI
       - "8554:8554" # RTSP
       - "8555:8555/udp" # WebRTC
