@@ -64,9 +64,25 @@ install_and_verify_dependencies() {
         git clone --depth=1 "$BAMBU_STREAMER_REPO" "$BAMBU_STREAMER_SRC_DIR"
     else log "✅ bambusourcestreamer 仓库已存在。" "bambusourcestreamer repository already exists."; fi
     log "正在从源码同步脚本和配置..." "Syncing scripts and configuration from source..."
-    cp "$BAMBU_STREAMER_SRC_DIR/bambu_fifo_feeder.sh" "$FEEDER_SCRIPT"
-    cp "$BAMBU_STREAMER_SRC_DIR/bambu_url_generator.py" "$URL_GENERATOR_SCRIPT"
-    cp "$BAMBU_STREAMER_SRC_DIR/go2rtc_fifo.yaml" "$CONFIG_FILE"
+    # 只在目标文件不存在时才复制，避免覆盖本地修改
+    if [ ! -f "$FEEDER_SCRIPT" ]; then
+        log "📥 首次同步 feeder 脚本..." "First-time sync of feeder script..."
+        cp "$BAMBU_STREAMER_SRC_DIR/bambu_fifo_feeder.sh" "$FEEDER_SCRIPT"
+    else
+        log "✅ Feeder 脚本已存在，跳过。" "Feeder script already exists, skipping."
+    fi
+    if [ ! -f "$URL_GENERATOR_SCRIPT" ]; then
+        log "📥 首次同步 URL generator 脚本..." "First-time sync of URL generator script..."
+        cp "$BAMBU_STREAMER_SRC_DIR/bambu_url_generator.py" "$URL_GENERATOR_SCRIPT"
+    else
+        log "✅ URL generator 脚本已存在，跳过。" "URL generator script already exists, skipping."
+    fi
+    if [ ! -f "$CONFIG_FILE" ]; then
+        log "📥 首次同步 go2rtc 配置文件..." "First-time sync of go2rtc config file..."
+        cp "$BAMBU_STREAMER_SRC_DIR/go2rtc_fifo.yaml" "$CONFIG_FILE"
+    else
+        log "✅ go2rtc 配置文件已存在，跳过。" "go2rtc config file already exists, skipping."
+    fi
     chmod +x "$FEEDER_SCRIPT"
 
     if [ ! -d "$BAMBU_CLOUD_API_DIR" ]; then
