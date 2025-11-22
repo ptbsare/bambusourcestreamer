@@ -89,7 +89,12 @@ install_and_verify_dependencies() {
         log "📦 克隆 Bambu-Lab-Cloud-API (depth=1)..." "Cloning Bambu-Lab-Cloud-API (depth=1)..."
         git clone --depth=1 "$BAMBU_CLOUD_API_REPO" "$BAMBU_CLOUD_API_DIR"
     else log "✅ Bambu-Lab-Cloud-API 仓库已存在。" "Bambu-Lab-Cloud-API repository already exists."; fi
-    log "🐍 正在将 Bambu-Lab-Cloud-API 安装为 Python 包..." "Installing Bambu-Lab-Cloud-API as a Python package..."; pip install "$BAMBU_CLOUD_API_DIR"
+    if python3 -m pip show bambu-lab-cloud-api &>/dev/null; then
+        log "🐍 Bambu-Lab-Cloud-API 已安装，跳过。" "Bambu-Lab-Cloud-API is already installed, skipping."
+    else
+        log "🐍 正在将 Bambu-Lab-Cloud-API 安装为 Python 包..." "Installing Bambu-Lab-Cloud-API as a Python package..."
+        pip install "$BAMBU_CLOUD_API_DIR"
+    fi
     log "✅ 所有依赖项均已满足。" "All dependencies are satisfied."
 }
 
