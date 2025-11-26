@@ -38,8 +38,9 @@ docker run -d \
   -e PGID=1000 \
   -e TZ=Asia/Shanghai \
   -e DOCKER_MODS=linuxserver/mods:universal-package-install \
-  -e INSTALL_PACKAGES="git curl unzip jq gosu python3 python3-pip" \
+  -e INSTALL_PACKAGES="git curl unzip jq gosu python3 python3-pip ffmpeg" \
   `# -e PRINTER_SERIAL="YOUR_PRINTER_SERIAL"` \
+  `# -e RTSP_URL="rtsp://your-external-rtsp-server:8554/your-stream-name"` \
   -p 3000:3000 \
   -p 3001:3001 \
   -p 1984:1984 \
@@ -65,8 +66,9 @@ services:
       - PGID=1000
       - TZ=Asia/Shanghai
       - DOCKER_MODS=linuxserver/mods:universal-package-install
-      - INSTALL_PACKAGES=git curl unzip jq gosu python3 python3-pip
+      - INSTALL_PACKAGES=git curl unzip jq gosu python3 python3-pip ffmpeg
       # - PRINTER_SERIAL=YOUR_PRINTER_SERIAL # 如果您有多台打印机，请取消此行注释并填入序列号
+      # - RTSP_URL=rtsp://your-external-rtsp-server:8554/your-stream-name # 直接推流到外部 RTSP 服务器
     ports:
       - "3000:3000" # Bambu Studio desktop gui HTTP, must be proxied.
       - "3001:3001" # Bambu Studio desktop gui HTTPS.
@@ -111,6 +113,9 @@ docker restart bambustudio
 ### 环境变量
 
 -   `PRINTER_SERIAL`: **仅在您有多台打印机时需要**。用于指定要串流的打印机序列号。
+-   `RTSP_URL`: **（可选）** 用于将视频流直接推送到一个外部的 RTSP 服务器，而不是在容器内启动 go2rtc。
+    -   **格式**: `rtsp://<user>:<password>@<host>:<port>/<path>`
+    -   **注意**: 使用此模式时，请确保 `INSTALL_PACKAGES` 环境变量中包含了 `ffmpeg`。容器内的 go2rtc 服务将不会启动，相关的端口（`1984`, `8554`, `8555`）也不再需要映射。
 
 ### 脚本管理
 
@@ -158,8 +163,9 @@ docker run -d \
   -e PGID=1000 \
   -e TZ=Asia/Shanghai \
   -e DOCKER_MODS=linuxserver/mods:universal-package-install \
-  -e INSTALL_PACKAGES="git curl unzip jq gosu python3 python3-pip" \
+  -e INSTALL_PACKAGES="git curl unzip jq gosu python3 python3-pip ffmpeg" \
   `# -e PRINTER_SERIAL="YOUR_PRINTER_SERIAL"` \
+  `# -e RTSP_URL="rtsp://your-external-rtsp-server:8554/your-stream-name"` \
   -p 3000:3000 \
   -p 3001:3001 \
   -p 1984:1984 \
@@ -185,8 +191,9 @@ services:
       - PGID=1000
       - TZ=Asia/Shanghai
       - DOCKER_MODS=linuxserver/mods:universal-package-install
-      - INSTALL_PACKAGES=git curl unzip jq gosu python3 python3-pip
+      - INSTALL_PACKAGES=git curl unzip jq gosu python3 python3-pip ffmpeg
       # - PRINTER_SERIAL=YOUR_PRINTER_SERIAL # Uncomment and fill if you have multiple printers
+      # - RTSP_URL=rtsp://your-external-rtsp-server:8554/your-stream-name # Direct push to an external RTSP server
     ports:
       - "3000:3000" # Bambu Studio desktop gui HTTP, must be proxied.
       - "3001:3001" # Bambu Studio desktop gui HTTPS.
@@ -231,6 +238,9 @@ docker restart bambustudio
 ### Environment Variables
 
 -   `PRINTER_SERIAL`: **Only required if you have multiple printers**. Use it to specify which printer to stream.
+-   `RTSP_URL`: **(Optional)** Push the stream directly to an external RTSP server instead of running the internal go2rtc.
+    -   **Format**: `rtsp://<user>:<password>@<host>:<port>/<path>`
+    -   **Note**: When using this, ensure `ffmpeg` is included in the `INSTALL_PACKAGES` environment variable. The internal go2rtc service will not be started, and its related ports (`1984`, `8554`, `8555`) are not needed.
 
 ### Script Management
 
