@@ -141,16 +141,28 @@ start_service() {
     cd "$INSTALL_DIR" || (log "❌ 无法进入安装目录: $INSTALL_DIR" "Cannot enter installation directory: $INSTALL_DIR" && exit 1)
     
     RTSP_URL_FILE="$INSTALL_DIR/RTSP_URL.txt"
+    FIFO_PATH="/tmp/bambu_video.fifo"
     RTSP_TARGET_URL=""
     URL_IS_VALID=false
+
+    # --- 启动前强制清理 ---
+    log "🧹 正在执行启动前清理..." "Performing pre-start cleanup..."
+    if [ -f "$FEEDER_PID_FILE" ]; then
+        OLD_PID=$(cat "$FEEDER_PID_FILE" 2>/dev/null)
+        if [ -n "$OLD_PID" ] && kill -0 "$OLD_PID" 2>/dev/null; then
+            log "   发现残留的 feeder 进程 (PID: $OLD_PID)，正在强制停止..." "   Found leftover feeder process (PID: $OLD_PID), force stopping..."
+            kill -9 "$OLD_PID" 2>/dev/null
+        fi
+        rm -f "$FEEDER_PID_FILE"
+    fi
+    rm -f "$FIFO_PATH"
 
     log "🔎 正在检查 RTSP 推流配置文件..." "Checking for RTSP push config file..."
     if [ -f "$RTSP_URL_FILE" ]; then
         log "   发现文件: $RTSP_URL_FILE" "   Found file: $RTSP_URL_FILE"
-        RTSP_TARGET_URL=$(cat "$RTSP_URL_FILE" | tr -d '[:space:]') # 读取并移除所有空白字符
+        RTSP_TARGET_URL=$(cat "$RTSP_URL_FILE" | tr -d '[:space:]')
         log "   文件内容: '$RTSP_TARGET_URL'" "   File content: '$RTSP_TARGET_URL'"
         
-        # 使用严格的正则表达式验证 URL，仅允许字母、数字和安全的特殊字符 (_.:/@-), 以防止命令注入
         if [[ "$RTSP_TARGET_URL" =~ ^rtsp://[a-zA-Z0-9_.:/@-]+$ ]]; then
             log "   ✅ URL 格式安全有效。" "   URL format is safe and valid."
             URL_IS_VALID=true
@@ -166,37 +178,42 @@ start_service() {
         if [ -f "$FEEDER_PID_FILE" ]; then
             FEEDER_PID=$(cat "$FEEDER_PID_FILE" 2>/dev/null)
             if [ -n "$FEEDER_PID" ] && kill -0 "$FEEDER_PID" 2>/dev/null; then
-                log "向 FIFO feeder (PID: $FEEDER_PID) 发送 SIGTERM 信号..." "Sending SIGTERM to FIFO feeder (PID: $FEEDER_PID)..."
-                kill -TERM "$FEEDER_PID"; wait "$FEEDER_PID"; log "✅ FIFO feeder 已停止。" "FIFO feeder stopped.";
+                kill -TERM "$FEEDER_PID"; wait "$FEEDER_PID" 2>/dev/null; log "✅ FIFO feeder 已停止。" "FIFO feeder stopped.";
             fi; rm -f "$FEEDER_PID_FILE"
         fi
-        rm -f /tmp/bambu_video.fifo; log "✅ 所有服务已清理完毕。" "All services have been cleaned up."
+        rm -f "$FIFO_PATH"; log "✅ 所有服务已清理完毕。" "All services have been cleaned up."
     }
     trap 'cleanup_processes' SIGINT SIGTERM
 
-    if [ -f "$FEEDER_PID_FILE" ] && kill -0 "$(cat $FEEDER_PID_FILE 2>/dev/null)" 2>/dev/null; then
-        log "⚠️ FIFO feeder 已在运行 (PID: $(cat $FEEDER_PID_FILE))。" "FIFO feeder is already running (PID: $(cat $FEEDER_PID_FILE))."; SKIP_FEEDER=true;
-    else rm -f "$FEEDER_PID_FILE"; fi
+    log "🎥 启动 FIFO feeder..." "Starting FIFO feeder..."; "$FEEDER_SCRIPT" &
+    FEEDER_PID=$!; echo $FEEDER_PID > "$FEEDER_PID_FILE";
+    log "✅ FIFO feeder 已启动 (PID: $FEEDER_PID)" "FIFO feeder started (PID: $FEEDER_PID).";
 
-    if [ "$SKIP_FEEDER" != "true" ]; then
-        log "🎥 启动 FIFO feeder..." "Starting FIFO feeder..."; "$FEEDER_SCRIPT" &
-        FEEDER_PID=$!; echo $FEEDER_PID > "$FEEDER_PID_FILE";
-        log "✅ FIFO feeder 已启动 (PID: $FEEDER_PID)" "FIFO feeder started (PID: $FEEDER_PID)."; sleep 2;
+    log "⏳ 等待 FIFO 文件创建..." "Waiting for FIFO file creation..."
+    WAIT_COUNT=0
+    while [ ! -p "$FIFO_PATH" ] && [ $WAIT_COUNT -lt 10 ]; do
+        sleep 1; WAIT_COUNT=$((WAIT_COUNT + 1)); log "   ...等待 $WAIT_COUNT 秒" "   ...waited $WAIT_COUNT seconds"
+    done
+
+    if [ ! -p "$FIFO_PATH" ]; then
+        log "❌ 错误: 等待 FIFO 文件超时。Feeder 可能启动失败。" "Error: Timed out waiting for FIFO file. Feeder may have failed to start."
+        cleanup_processes; exit 1;
     fi
+    log "✅ FIFO 文件已就绪。" "FIFO file is ready."
 
     if [ "$URL_IS_VALID" = true ]; then
         log "🚀 Bambu FIFO + FFMPEG 服务启动..." "Starting Bambu FIFO + FFMPEG service..."
         log "   推流目标: $RTSP_TARGET_URL" "   Pushing stream to: $RTSP_TARGET_URL"
         log "🎬 启动 FFMPEG 推流..." "Starting FFMPEG stream push..."
         if ! command -v ffmpeg &> /dev/null; then
-            log "❌ 错误: 'ffmpeg' 命令未找到。请将其添加到 'INSTALL_PACKAGES' 环境变量中。" "Error: 'ffmpeg' command not found. Please add it to the 'INSTALL_PACKAGES' environment variable."
+            log "❌ 错误: 'ffmpeg' 命令未找到。" "Error: 'ffmpeg' command not found."
             cleanup_processes; exit 1
         fi
         
-        ffmpeg -re -i /tmp/bambu_video.fifo -c copy -f rtsp "$RTSP_TARGET_URL" &
+        ffmpeg -re -i "$FIFO_PATH" -c copy -f rtsp "$RTSP_TARGET_URL" &
         FFMPEG_PID=$!; wait "$FFMPEG_PID";
     else
-        if [ -f "$RTSP_URL_FILE" ]; then # 仅当文件存在但内容无效时才显示此消息
+        if [ -f "$RTSP_URL_FILE" ]; then
              log "   由于 URL 无效或不安全，将回退使用内置 go2rtc。" "   Falling back to internal go2rtc due to invalid or unsafe URL."
         fi
         log "🚀 Bambu FIFO + go2rtc 服务启动..." "Starting Bambu FIFO + go2rtc service..."
