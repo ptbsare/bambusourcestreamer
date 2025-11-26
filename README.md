@@ -40,7 +40,6 @@ docker run -d \
   -e DOCKER_MODS=linuxserver/mods:universal-package-install \
   -e INSTALL_PACKAGES="git curl unzip jq gosu python3 python3-pip ffmpeg" \
   `# -e PRINTER_SERIAL="YOUR_PRINTER_SERIAL"` \
-  `# -e RTSP_URL="rtsp://your-external-rtsp-server:8554/your-stream-name"` \
   -p 3000:3000 \
   -p 3001:3001 \
   -p 1984:1984 \
@@ -68,7 +67,6 @@ services:
       - DOCKER_MODS=linuxserver/mods:universal-package-install
       - INSTALL_PACKAGES=git curl unzip jq gosu python3 python3-pip ffmpeg
       # - PRINTER_SERIAL=YOUR_PRINTER_SERIAL # 如果您有多台打印机，请取消此行注释并填入序列号
-      # - RTSP_URL=rtsp://your-external-rtsp-server:8554/your-stream-name # 直接推流到外部 RTSP 服务器
     ports:
       - "3000:3000" # Bambu Studio desktop gui HTTP, must be proxied.
       - "3001:3001" # Bambu Studio desktop gui HTTPS.
@@ -83,7 +81,7 @@ services:
 ```
 
 > **配置说明**:
-> - `INSTALL_PACKAGES`: 自动安装服务脚本运行所需的核心工具。
+> - `INSTALL_PACKAGES`: 自动安装服务脚本运行所需的核心工具。**如果要使用外部RTSP推流功能，请确保在此处加入 `ffmpeg`**。
 > - `/custom-services.d`: 这是 `linuxserver.io` 容器的**开机自启**目录。将其持久化可以确保我们的服务脚本在容器更新后依然存在。
 > - **端口**: 额外映射了 `1984`, `8554`, `8555` 用于访问视频流。
 
@@ -110,12 +108,21 @@ docker exec -it bambustudio bash -c "curl -sL -o /custom-services.d/bambu-stream
 docker restart bambustudio
 ```
 
+### 配置外部 RTSP 服务器（可选）
+
+如果您希望将视频流推送到一个已有的外部 RTSP 服务器 (例如 Frigate, Shinobi, 或另一个 go2rtc 实例)，而不是使用容器内建的 go2rtc，请按以下步骤操作：
+
+1.  **确保 `ffmpeg` 已安装**: 在您的 Docker `INSTALL_PACKAGES` 环境变量中添加 `ffmpeg`。
+2.  **创建配置文件**: 在容器内的以下路径创建一个文件：
+    `/config/.config/BambuStudio/cameratools/RTSP_URL.txt`
+3.  **填入推流地址**: 在该文件中填入您完整的 RTSP 推流地址，例如：
+    `rtsp://192.168.1.100:8554/bambu_stream`
+
+服务启动时，脚本会自动检测该文件。如果文件存在且内容为有效的 RTSP URL，脚本将使用 `ffmpeg` 直接推流，而不会启动内置的 go2rtc 服务。如果文件不存在或内容无效，脚本将自动回退到使用内置 go2rtc 的默认模式。
+
 ### 环境变量
 
 -   `PRINTER_SERIAL`: **仅在您有多台打印机时需要**。用于指定要串流的打印机序列号。
--   `RTSP_URL`: **（可选）** 用于将视频流直接推送到一个外部的 RTSP 服务器，而不是在容器内启动 go2rtc。
-    -   **格式**: `rtsp://<user>:<password>@<host>:<port>/<path>`
-    -   **注意**: 使用此模式时，请确保 `INSTALL_PACKAGES` 环境变量中包含了 `ffmpeg`。容器内的 go2rtc 服务将不会启动，相关的端口（`1984`, `8554`, `8555`）也不再需要映射。
 
 ### 脚本管理
 
@@ -165,7 +172,6 @@ docker run -d \
   -e DOCKER_MODS=linuxserver/mods:universal-package-install \
   -e INSTALL_PACKAGES="git curl unzip jq gosu python3 python3-pip ffmpeg" \
   `# -e PRINTER_SERIAL="YOUR_PRINTER_SERIAL"` \
-  `# -e RTSP_URL="rtsp://your-external-rtsp-server:8554/your-stream-name"` \
   -p 3000:3000 \
   -p 3001:3001 \
   -p 1984:1984 \
@@ -193,7 +199,6 @@ services:
       - DOCKER_MODS=linuxserver/mods:universal-package-install
       - INSTALL_PACKAGES=git curl unzip jq gosu python3 python3-pip ffmpeg
       # - PRINTER_SERIAL=YOUR_PRINTER_SERIAL # Uncomment and fill if you have multiple printers
-      # - RTSP_URL=rtsp://your-external-rtsp-server:8554/your-stream-name # Direct push to an external RTSP server
     ports:
       - "3000:3000" # Bambu Studio desktop gui HTTP, must be proxied.
       - "3001:3001" # Bambu Studio desktop gui HTTPS.
@@ -208,7 +213,7 @@ services:
 ```
 
 > **Configuration Notes**:
-> - `INSTALL_PACKAGES`: Installs essential tools for the service script.
+> - `INSTALL_PACKAGES`: Installs essential tools. **If using the external RTSP push feature, ensure `ffmpeg` is included here.**
 > - `/custom-services.d`: This is the **auto-start** directory for `linuxserver.io` containers. Persisting it ensures our service script survives container updates.
 > - **Ports**: Maps extra ports (`1984`, `8554`, `8555`) for accessing the video stream.
 
@@ -235,12 +240,21 @@ After a successful login, restart your container, and the service will start aut
 docker restart bambustudio
 ```
 
+### Configure External RTSP Server (Optional)
+
+If you want to push the video stream to an existing external RTSP server (e.g., Frigate, Shinobi, or another go2rtc instance) instead of using the built-in one, follow these steps:
+
+1.  **Ensure `ffmpeg` is installed**: Add `ffmpeg` to your Docker `INSTALL_PACKAGES` environment variable.
+2.  **Create Config File**: Create a file inside the container at the following path:
+    `/config/.config/BambuStudio/cameratools/RTSP_URL.txt`
+3.  **Enter Push URL**: In that file, add your full RTSP push URL, for example:
+    `rtsp://192.168.1.100:8554/bambu_stream`
+
+The service will automatically detect this file on startup. If it exists and contains a valid RTSP URL, the script will use `ffmpeg` to push the stream directly and will not start the internal go2rtc service. If the file doesn't exist or its content is invalid, it will fall back to the default mode using the internal go2rtc.
+
 ### Environment Variables
 
 -   `PRINTER_SERIAL`: **Only required if you have multiple printers**. Use it to specify which printer to stream.
--   `RTSP_URL`: **(Optional)** Push the stream directly to an external RTSP server instead of running the internal go2rtc.
-    -   **Format**: `rtsp://<user>:<password>@<host>:<port>/<path>`
-    -   **Note**: When using this, ensure `ffmpeg` is included in the `INSTALL_PACKAGES` environment variable. The internal go2rtc service will not be started, and its related ports (`1984`, `8554`, `8555`) are not needed.
 
 ### Script Management
 

@@ -140,11 +140,25 @@ cleanup_files() {
 start_service() {
     cd "$INSTALL_DIR" || (log "❌ 无法进入安装目录: $INSTALL_DIR" "Cannot enter installation directory: $INSTALL_DIR" && exit 1)
     
-    if [ -n "$RTSP_URL" ]; then
-        log "🚀 Bambu FIFO + FFMPEG 服务启动..." "Starting Bambu FIFO + FFMPEG service..."
-        log "   推流目标: $RTSP_URL" "   Pushing stream to: $RTSP_URL"
+    RTSP_URL_FILE="$INSTALL_DIR/RTSP_URL.txt"
+    RTSP_TARGET_URL=""
+    URL_IS_VALID=false
+
+    log "🔎 正在检查 RTSP 推流配置文件..." "Checking for RTSP push config file..."
+    if [ -f "$RTSP_URL_FILE" ]; then
+        log "   发现文件: $RTSP_URL_FILE" "   Found file: $RTSP_URL_FILE"
+        RTSP_TARGET_URL=$(cat "$RTSP_URL_FILE" | tr -d '[:space:]') # 读取并移除所有空白字符
+        log "   文件内容: '$RTSP_TARGET_URL'" "   File content: '$RTSP_TARGET_URL'"
+        
+        # 使用严格的正则表达式验证 URL，仅允许字母、数字和安全的特殊字符 (_.:/@-), 以防止命令注入
+        if [[ "$RTSP_TARGET_URL" =~ ^rtsp://[a-zA-Z0-9_.:/@-]+$ ]]; then
+            log "   ✅ URL 格式安全有效。" "   URL format is safe and valid."
+            URL_IS_VALID=true
+        else
+            log "   ⚠️ URL 格式无效或包含不安全字符。" "   URL format is invalid or contains unsafe characters."
+        fi
     else
-        log "🚀 Bambu FIFO + go2rtc 服务启动..." "Starting Bambu FIFO + go2rtc service..."
+        log "   未发现配置文件，将使用内置 go2rtc。" "   Config file not found, will use internal go2rtc."
     fi
     
     cleanup_processes() {
@@ -170,17 +184,23 @@ start_service() {
         log "✅ FIFO feeder 已启动 (PID: $FEEDER_PID)" "FIFO feeder started (PID: $FEEDER_PID)."; sleep 2;
     fi
 
-    if [ -n "$RTSP_URL" ]; then
+    if [ "$URL_IS_VALID" = true ]; then
+        log "🚀 Bambu FIFO + FFMPEG 服务启动..." "Starting Bambu FIFO + FFMPEG service..."
+        log "   推流目标: $RTSP_TARGET_URL" "   Pushing stream to: $RTSP_TARGET_URL"
         log "🎬 启动 FFMPEG 推流..." "Starting FFMPEG stream push..."
         if ! command -v ffmpeg &> /dev/null; then
             log "❌ 错误: 'ffmpeg' 命令未找到。请将其添加到 'INSTALL_PACKAGES' 环境变量中。" "Error: 'ffmpeg' command not found. Please add it to the 'INSTALL_PACKAGES' environment variable."
             cleanup_processes; exit 1
         fi
         
-        ffmpeg -re -i /tmp/bambu_video.fifo -c copy -f rtsp "$RTSP_URL" &
+        ffmpeg -re -i /tmp/bambu_video.fifo -c copy -f rtsp "$RTSP_TARGET_URL" &
         FFMPEG_PID=$!; wait "$FFMPEG_PID";
     else
-        log "� 启动 go2rtc 服务器..." "Starting go2rtc server..."
+        if [ -f "$RTSP_URL_FILE" ]; then # 仅当文件存在但内容无效时才显示此消息
+             log "   由于 URL 无效或不安全，将回退使用内置 go2rtc。" "   Falling back to internal go2rtc due to invalid or unsafe URL."
+        fi
+        log "🚀 Bambu FIFO + go2rtc 服务启动..." "Starting Bambu FIFO + go2rtc service..."
+        log "🌐 启动 go2rtc 服务器..." "Starting go2rtc server..."
         log "  Web UI:  http://localhost:1984/" ""; log "  RTSP:    rtsp://localhost:8554/bambu" ""
 
         "$GO2RTC_BIN" -config "$CONFIG_FILE" &
