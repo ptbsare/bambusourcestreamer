@@ -221,11 +221,6 @@ def main():
         action="store_true"
     )
     parser.add_argument(
-        "--region",
-        help="Specify the API region during login ('global' or 'china').\nOnly used with --login.",
-        type=str, choices=['global', 'china'], default='global'
-    )
-    parser.add_argument(
        "--discover",
        help="List available printers in 'serial name' format for scripting.",
        action="store_true"
@@ -234,15 +229,20 @@ def main():
 
     if args.login:
         print("Bambu Lab Interactive Login (Bambu Lab 交互式登录)")
-        print(f"Target Region (目标区域): {args.region.upper()}")
         print("===================================================")
         try:
-            prompt = "Enter your Bambu Lab phone number (输入您的手机号): " if args.region == 'china' else "Enter your Bambu Lab email (输入您的Bambu Lab邮箱): "
+            # --- Interactive Region Selection ---
+            print("Select your region (选择您的区域):")
+            choice = input("  1. Global (default)\n  2. China\nEnter choice (输入选项): ")
+            region = 'china' if choice.strip() == '2' else 'global'
+            print(f"\nTarget Region (目标区域): {region.upper()}")
+            
+            prompt = "Enter your Bambu Lab phone number (输入您的手机号): " if region == 'china' else "Enter your Bambu Lab email (输入您的Bambu Lab邮箱): "
             username = input(prompt)
             password = getpass.getpass("Enter your password (输入您的密码): ")
-            client = SimpleBambuClient(region=args.region)
+            client = SimpleBambuClient(region=region)
             token = client.login(username, password)
-            save_token(args.region, token)
+            save_token(region, token)
             print("✅ Login successful! Token and region have been saved for future use.")
             print("   (登录成功! Token和区域已保存供将来使用)")
             return 0
