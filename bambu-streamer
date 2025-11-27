@@ -124,6 +124,62 @@ update_scripts() {
         cp "$BAMBU_STREAMER_SRC_DIR/go2rtc_fifo.yaml" "$CONFIG_FILE"
         chmod +x "$FEEDER_SCRIPT"
         log "✅ 脚本更新完成。" "Scripts updated successfully."
+        
+        # 更新 go2rtc 二进制文件
+        log "📦 正在检查 go2rtc 更新..." "Checking for go2rtc updates..."
+        CPU_ARCH=$(uname -m);
+        case $CPU_ARCH in
+            "x86_64") GO2RTC_ARCH="linux_amd64";;
+            "aarch64") GO2RTC_ARCH="linux_arm64";;
+            "armv7l") GO2RTC_ARCH="linux_armv7";;
+            *) log "❌ 不支持的 CPU 架构: $CPU_ARCH" "Unsupported CPU architecture: $CPU_ARCH"; exit 1;;
+        esac
+        
+        API_URL="https://api.github.com/repos/$GO2RTC_REPO/releases/latest"
+        LATEST_VERSION=$(curl -s $API_URL | jq -r '.tag_name')
+        
+        if [ -z "$LATEST_VERSION" ]; then
+            log "⚠️  无法获取 go2rtc 最新版本信息，跳过更新。" "Could not fetch latest go2rtc version info, skipping update."
+        else
+            CURRENT_VERSION=""
+            if [ -f "$GO2RTC_BIN" ]; then
+                CURRENT_VERSION=$("$GO2RTC_BIN" --version 2>&1 | head -n1 | grep -oP 'v[\d.]+' || echo "unknown")
+            fi
+            
+            log "   当前版本: ${CURRENT_VERSION:-未安装} | 最新版本: $LATEST_VERSION" "   Current version: ${CURRENT_VERSION:-not installed} | Latest version: $LATEST_VERSION"
+            
+            if [ "$CURRENT_VERSION" != "$LATEST_VERSION" ]; then
+                log "📥 正在下载 go2rtc $LATEST_VERSION..." "Downloading go2rtc $LATEST_VERSION..."
+                DOWNLOAD_URL=$(curl -s $API_URL | jq -r ".assets[] | select(.name | endswith(\"$GO2RTC_ARCH\")) | .browser_download_url")
+                
+                if [ -z "$DOWNLOAD_URL" ]; then
+                    log "❌ 无法找到适合的 go2rtc 下载链接。" "Could not find suitable go2rtc download link."
+                else
+                    # 备份旧版本
+                    if [ -f "$GO2RTC_BIN" ]; then
+                        mv "$GO2RTC_BIN" "$GO2RTC_BIN.bak"
+                        log "   已备份旧版本到 $GO2RTC_BIN.bak" "   Backed up old version to $GO2RTC_BIN.bak"
+                    fi
+                    
+                    curl -sL "$DOWNLOAD_URL" -o "$GO2RTC_BIN"
+                    chmod +x "$GO2RTC_BIN"
+                    
+                    # 验证下载
+                    if [ -f "$GO2RTC_BIN" ] && [ -x "$GO2RTC_BIN" ]; then
+                        rm -f "$GO2RTC_BIN.bak"
+                        log "✅ go2rtc 更新到 $LATEST_VERSION 成功。" "go2rtc updated to $LATEST_VERSION successfully."
+                    else
+                        # 恢复备份
+                        if [ -f "$GO2RTC_BIN.bak" ]; then
+                            mv "$GO2RTC_BIN.bak" "$GO2RTC_BIN"
+                            log "❌ go2rtc 下载失败，已恢复旧版本。" "go2rtc download failed, restored old version."
+                        fi
+                    fi
+                fi
+            else
+                log "✅ go2rtc 已是最新版本。" "go2rtc is already up to date."
+            fi
+        fi
     else
         log "⚠️  未找到源码目录，请先运行一次安装。" "Source directory not found, please run the installation first."; exit 1;
     fi
