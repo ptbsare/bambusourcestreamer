@@ -96,9 +96,22 @@ install_and_verify_dependencies() {
 
 login_to_bambu_cloud() {
     install_and_verify_dependencies
-    log "🔑 切换到 'abc' 用户进行交互式登录..." "Switching to 'abc' user for interactive login..."; log "   请根据接下来的提示操作。" "   Please follow the prompts."
+    log "🔑 正在以 'abc' 用户身份执行交互式登录..." "Executing interactive login as user 'abc'..."
+    log "   请根据接下来的提示操作。" "   Please follow the prompts."
+    
+    # Run the login script as 'abc' user
     gosu abc python3 "$URL_GENERATOR_SCRIPT" --login
-    log "✅ 登录流程完成。" "Login process completed."; exit 0
+    
+    # After login, ensure the created token file is owned by the correct user ('abc' in linuxserver containers)
+    TOKEN_FILE="/config/.bambu_token"
+    if [ -f "$TOKEN_FILE" ]; then
+        log "🔐 正在修正 token 文件的权限..." "Correcting token file permissions..."
+        chown abc:users "$TOKEN_FILE"
+        log "✅ 权限修正完成。" "Permissions corrected."
+    fi
+
+    log "✅ 登录流程完成。" "Login process completed."
+    exit 0
 }
 
 update_scripts() {
