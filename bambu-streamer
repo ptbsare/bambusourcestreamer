@@ -143,7 +143,15 @@ update_scripts() {
         else
             CURRENT_VERSION=""
             if [ -f "$GO2RTC_BIN" ]; then
-                CURRENT_VERSION=$("$GO2RTC_BIN" --version 2>&1 | head -n1 | grep -oP 'v[\d.]+' || echo "unknown")
+                # go2rtc 输出格式: "go2rtc version 1.9.11 (be80eb1) linux/amd64"
+                # 提取版本号并添加 'v' 前缀以匹配 GitHub release tag 格式
+                VERSION_OUTPUT=$("$GO2RTC_BIN" --version 2>&1 | head -n1)
+                VERSION_NUM=$(echo "$VERSION_OUTPUT" | grep -oP 'version \K[\d.]+' || echo "")
+                if [ -n "$VERSION_NUM" ]; then
+                    CURRENT_VERSION="v$VERSION_NUM"
+                else
+                    CURRENT_VERSION="unknown"
+                fi
             fi
             
             log "   当前版本: ${CURRENT_VERSION:-未安装} | 最新版本: $LATEST_VERSION" "   Current version: ${CURRENT_VERSION:-not installed} | Latest version: $LATEST_VERSION"
