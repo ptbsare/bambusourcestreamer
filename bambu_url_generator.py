@@ -27,7 +27,7 @@ CLI_ID = str(uuid.uuid4())
 
 GLOBAL_API = "https://api.bambulab.com/v1"
 CHINA_API = "https://api.bambulab.cn/v1"
-TOKEN_FILE_PATH = /config/.bambu_token"
+TOKEN_FILE_PATH = "/config/.bambu_token"
 
 # --- API Client ---
 
