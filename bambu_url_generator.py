@@ -21,8 +21,6 @@ import requests
 import getpass
 
 # --- Constants ---
-# These values seem to be client-specific and are hardcoded based on a working example
-# from Bambu Studio. They may need updating if future versions of bambu_source require different values.
 NET_VER = "02.03.01.52"
 CLI_VER = "02.03.01.51"
 CLI_ID = str(uuid.uuid4())
@@ -46,7 +44,7 @@ class SimpleBambuClient:
         self.token = token
         self.session = requests.Session()
         self.session.headers.update({
-            'User-Agent': 'BambuStudio/01.09.01.66', # Mimic Bambu Studio User-Agent
+            'User-Agent': 'BambuStudio/01.09.01.66',
             'Content-Type': 'application/json'
         })
 
@@ -60,7 +58,9 @@ class SimpleBambuClient:
             response = self.session.request(method, url, timeout=30, **kwargs)
             if response.status_code == 401:
                  raise BambuAPIError("AUTHORIZATION_FAILED (授权失败). Your token may be invalid or expired. Please --login again.")
-            response.raise_for_status()
+            # Don't raise for status on login endpoint, as it uses 400 for flow control
+            if "/user-service/user/login" not in url:
+                response.raise_for_status()
             if not response.content:
                 return None
             return response.json()
@@ -70,20 +70,60 @@ class SimpleBambuClient:
             raise BambuAPIError(f"Invalid JSON response from server (服务器返回无效JSON): {response.text}")
 
     def login(self, username, password):
-        """Logs in to get an access token."""
+        """
+        Handles the complete login flow, including 2FA verification code.
+        """
+        # Step 1: Initial login attempt with password
         payload = {"account": username, "password": password}
         try:
             data = self._request("POST", "user-service/user/login", json=payload)
+
+            if data and data.get("loginType") == "verifyCode":
+                # Step 2: Verification code is required
+                print("Verification code required. (需要验证码)")
+                return self._handle_email_verification(username)
+
             if data and data.get("accessToken"):
                 self.token = data["accessToken"]
                 return self.token
-            else:
-                error_msg = data.get("message", "Unknown login error")
-                raise BambuAPIError(f"Login failed (登录失败): {error_msg}")
+
+            error_msg = data.get("message", "Unknown login error from initial attempt")
+            raise BambuAPIError(f"Login failed (登录失败): {error_msg}")
+
+        except requests.exceptions.HTTPError as e:
+             # Handle cases where the server returns an error on the initial attempt
+            error_body = e.response.json()
+            error_msg = error_body.get("message", "HTTP error during login")
+            raise BambuAPIError(f"Login failed (登录失败): {error_msg}")
         except BambuAPIError as e:
-            # Re-raise to be caught by the main logic
             raise e
 
+    def _handle_email_verification(self, account: str) -> str:
+        """Handle email/phone verification code flow."""
+        # Step 2a: Send the verification code
+        is_china = self.region == "china"
+        send_endpoint = "user-service/user/sendsmscode" if is_china else "user-service/user/sendemail/code"
+        payload_key = "phone" if is_china else "email"
+        send_payload = {payload_key: account, "type": "codeLogin"}
+        
+        print("Requesting verification code... (正在请求验证码...)")
+        self._request("POST", send_endpoint, json=send_payload)
+        
+        # Step 2b: Get code from user
+        prompt = "Enter the SMS code (请输入短信验证码): " if is_china else "Enter the email code (请输入邮箱验证码): "
+        code = input(prompt)
+
+        # Step 2c: Verify the code
+        verify_payload = {"account": account, "code": code}
+        verify_data = self._request("POST", "user-service/user/login", json=verify_payload)
+        
+        token = verify_data.get("accessToken")
+        if token:
+            self.token = token
+            return token
+        else:
+            error_msg = verify_data.get("message", "Verification failed")
+            raise BambuAPIError(error_msg)
 
     def get_devices(self):
         """Fetches a list of devices."""
@@ -101,7 +141,7 @@ def save_token(region: str, token: str):
     try:
         with open(TOKEN_FILE_PATH, 'w') as f:
             json.dump({"region": region, "token": token}, f)
-        os.chmod(TOKEN_FILE_PATH, 0o600)  # Restrict permissions
+        os.chmod(TOKEN_FILE_PATH, 0o600)
     except IOError as e:
         print(f"⚠️ Warning: Could not save token to {TOKEN_FILE_PATH}: {e}", file=sys.stderr)
 
@@ -135,8 +175,6 @@ def get_full_url(client: SimpleBambuClient, device: dict, quiet: bool) -> str:
     tutk_uid = creds.get('ttcode')
     authkey = creds.get('authkey')
     passwd = creds.get('passwd')
-    # The 'region' in the URL is the TUTK region, which might differ from the API region.
-    # We should use the one provided by the ttcode response.
     tutk_region = creds.get('region', 'us')
     dev_ver = device.get('ota_version', '00.00.00.00')
 
@@ -194,13 +232,13 @@ def main():
     )
     args = parser.parse_args()
 
-    # --- 1. Handle Interactive Login ---
     if args.login:
         print("Bambu Lab Interactive Login (Bambu Lab 交互式登录)")
         print(f"Target Region (目标区域): {args.region.upper()}")
         print("===================================================")
         try:
-            username = input("Enter your Bambu Lab email (输入您的Bambu Lab邮箱): ")
+            prompt = "Enter your Bambu Lab phone number (输入您的手机号): " if args.region == 'china' else "Enter your Bambu Lab email (输入您的Bambu Lab邮箱): "
+            username = input(prompt)
             password = getpass.getpass("Enter your password (输入您的密码): ")
             client = SimpleBambuClient(region=args.region)
             token = client.login(username, password)
@@ -221,7 +259,6 @@ def main():
         print("Bambu Lab Cloud URL Generator (Bambu Lab 云端URL生成器)")
         print("======================================================")
 
-    # --- 2. Authentication (using saved token) ---
     region, token = load_token()
     if not token:
         print("ERROR: NO_TOKEN_FOUND (未找到Token)", file=sys.stderr)
@@ -232,7 +269,6 @@ def main():
     if is_interactive:
         print(f"✅ Authenticated using saved token for region '{region}'. (使用区域'{region}'的已保存Token进行认证)")
 
-    # --- 3. Get Devices ---
     client = SimpleBambuClient(region=region, token=token)
     try:
         devices = client.get_devices()
@@ -244,7 +280,6 @@ def main():
         print(f"❌ Failed to get devices (获取设备列表失败): {e}", file=sys.stderr)
         return 1
 
-    # --- 4. Handle Discovery Mode ---
     if args.discover:
        for device in devices:
            name = device.get('name', 'Unknown')
@@ -252,7 +287,6 @@ def main():
            print(f"{serial} {name}")
        return 0
 
-    # --- 5. Select Device ---
     selected_device = None
     if args.serial:
         selected_device = next((d for d in devices if d.get('dev_id') == args.serial), None)
@@ -281,21 +315,19 @@ def main():
         else:
             choice = 0
         selected_device = devices[choice]
-    else: # Quiet mode
+    else:
         selected_device = next((d for d in devices if d.get('online')), devices)
 
     if is_interactive:
         print(f"\nSelected (已选择): {selected_device.get('name')}")
         print("Fetching camera credentials... (正在获取摄像头凭证...)")
 
-    # --- 6. Get URL ---
     try:
         bambu_url = get_full_url(client, selected_device, args.quiet)
     except (BambuAPIError, ValueError) as e:
         print(f"❌ Failed to generate URL (生成URL失败): {e}", file=sys.stderr)
         return 1
 
-    # --- 7. Output ---
     if is_interactive:
         print("\n" + "="*50)
         print("✅ Bambu Source URL Generated (Bambu Source URL已生成):")
