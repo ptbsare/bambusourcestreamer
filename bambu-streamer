@@ -231,21 +231,20 @@ start_service() {
 
             log "🎬 正在启动 FFMPEG 推流 (TCP模式, 尝试 #$((FFMPEG_RETRY_COUNT + 1)))..." "Starting FFMPEG stream push (TCP mode, attempt #$((FFMPEG_RETRY_COUNT + 1)))..."
             
-            # 使用 -reconnect 选项和更宽松的错误处理
-            # -reconnect 1: 启用自动重连
-            # -reconnect_streamed 1: 对流式传输启用重连
-            # -reconnect_delay_max 5: 最大重连延迟5秒
+            # FFmpeg 容错配置：
+            # -re: 以实时速率读取输入
+            # -fflags +genpts: 生成 PTS（解决时间戳问题）
+            # -use_wallclock_as_timestamps 1: 使用系统时钟作为时间戳
+            # -rtsp_transport tcp: 使用TCP传输
             # -rtsp_flags prefer_tcp: 优先使用TCP
-            # -stimeout 5000000: 连接超时5秒（微秒）
-            ffmpeg -loglevel warning -re -i "$FIFO_PATH" \
+            # -max_delay 500000: 最大延迟0.5秒
+            ffmpeg -loglevel warning -re -fflags +genpts -use_wallclock_as_timestamps 1 \
+                -i "$FIFO_PATH" \
                 -c copy \
                 -f rtsp \
                 -rtsp_transport tcp \
                 -rtsp_flags prefer_tcp \
-                -stimeout 5000000 \
-                -reconnect 1 \
-                -reconnect_streamed 1 \
-                -reconnect_delay_max 5 \
+                -max_delay 500000 \
                 "$RTSP_TARGET_URL" 2>&1 | while IFS= read -r line; do
                     log "   [FFmpeg] $line" ""
                 done
