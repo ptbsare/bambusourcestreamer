@@ -215,6 +215,7 @@ start_service() {
         # FFmpeg 重试计数器
         FFMPEG_RETRY_COUNT=0
         FFMPEG_MAX_FAST_RETRIES=5
+        FFMPEG_STABLE_THRESHOLD=120  # 稳定运行2分钟后重置计数器
         
         while true; do
             # Health Check: 检查上游 feeder 进程是否还存活
@@ -228,8 +229,9 @@ start_service() {
                 log "❌ 未找到 feeder PID 文件。正在退出推流循环..." "Feeder PID file not found. Exiting push loop..."
                 break
             fi
+FFMPEG_START_TIME=$(date +%s)
+log "🎬 正在启动 FFMPEG 推流 (TCP模式, 尝试 #$((FFMPEG_RETRY_COUNT + 1)))..." "Starting FFMPEG stream push (TCP mode, attempt #$((FFMPEG_RETRY_COUNT + 1)))..."
 
-            log "🎬 正在启动 FFMPEG 推流 (TCP模式, 尝试 #$((FFMPEG_RETRY_COUNT + 1)))..." "Starting FFMPEG stream push (TCP mode, attempt #$((FFMPEG_RETRY_COUNT + 1)))..."
             
             # FFmpeg 容错配置：
             # -re: 以实时速率读取输入
@@ -250,22 +252,27 @@ start_service() {
                 done
             
             FFMPEG_EXIT_CODE=${PIPESTATUS[0]}
-            FFMPEG_RETRY_COUNT=$((FFMPEG_RETRY_COUNT + 1))
+            FFMPEG_END_TIME=$(date +%s)
+            FFMPEG_RUNTIME=$((FFMPEG_END_TIME - FFMPEG_START_TIME))
+            
+            # 如果 FFmpeg 稳定运行超过阈值时间，重置重试计数器
+            if [ $FFMPEG_RUNTIME -ge $FFMPEG_STABLE_THRESHOLD ]; then
+                log "✅ FFmpeg 已稳定运行 ${FFMPEG_RUNTIME} 秒，重置重试计数器。" "FFmpeg ran stably for ${FFMPEG_RUNTIME} seconds, resetting retry counter."
+                FFMPEG_RETRY_COUNT=0
+            else
+                FFMPEG_RETRY_COUNT=$((FFMPEG_RETRY_COUNT + 1))
+            fi
             
             # 根据重试次数决定等待时间
             if [ $FFMPEG_RETRY_COUNT -le $FFMPEG_MAX_FAST_RETRIES ]; then
                 RETRY_DELAY=3
-                log "⚠️ FFMPEG 推流已停止 (退出码: $FFMPEG_EXIT_CODE)。快速重试中，将在 ${RETRY_DELAY} 秒后重启..." "FFMPEG stream stopped (exit code: $FFMPEG_EXIT_CODE). Fast retry, restarting in ${RETRY_DELAY} seconds..."
+                log "⚠️ FFMPEG 推流已停止 (退出码: $FFMPEG_EXIT_CODE, 运行时长: ${FFMPEG_RUNTIME}s)。快速重试中，将在 ${RETRY_DELAY} 秒后重启..." "FFMPEG stream stopped (exit code: $FFMPEG_EXIT_CODE, runtime: ${FFMPEG_RUNTIME}s). Fast retry, restarting in ${RETRY_DELAY} seconds..."
             else
                 RETRY_DELAY=10
-                log "⚠️ FFMPEG 推流已停止 (退出码: $FFMPEG_EXIT_CODE)。已达快速重试上限，将在 ${RETRY_DELAY} 秒后重启..." "FFMPEG stream stopped (exit code: $FFMPEG_EXIT_CODE). Fast retry limit reached, restarting in ${RETRY_DELAY} seconds..."
+                log "⚠️ FFMPEG 推流已停止 (退出码: $FFMPEG_EXIT_CODE, 运行时长: ${FFMPEG_RUNTIME}s)。已达快速重试上限，将在 ${RETRY_DELAY} 秒后重启..." "FFMPEG stream stopped (exit code: $FFMPEG_EXIT_CODE, runtime: ${FFMPEG_RUNTIME}s). Fast retry limit reached, restarting in ${RETRY_DELAY} seconds..."
             fi
             
             sleep $RETRY_DELAY
-            
-            # 如果连续成功运行超过2分钟，重置重试计数器
-            # 这里我们通过检查 FFmpeg 的运行时间来判断
-            # 注：这是一个简化的实现，实际可以通过记录启动时间来更准确地判断
         done &
         FFMPEG_PID=$!; wait "$FFMPEG_PID";
     else
