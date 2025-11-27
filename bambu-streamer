@@ -15,12 +15,10 @@ set -e
 # --- 全局配置 ---
 INSTALL_DIR="/config/.config/BambuStudio/cameratools"
 BAMBU_STREAMER_REPO="https://github.com/ptbsare/bambusourcestreamer.git"
-BAMBU_CLOUD_API_REPO="https://github.com/coelacant1/Bambu-Lab-Cloud-API.git"
 GO2RTC_REPO="AlexxIT/go2rtc"
 
 # 派生路径
 BAMBU_STREAMER_SRC_DIR="$INSTALL_DIR/bambusourcestreamer_src" # 临时克隆目录
-BAMBU_CLOUD_API_DIR="$INSTALL_DIR/Bambu-Lab-Cloud-API"
 FEEDER_SCRIPT="$INSTALL_DIR/bambu_fifo_feeder.sh"
 URL_GENERATOR_SCRIPT="$INSTALL_DIR/bambu_url_generator.py"
 GO2RTC_BIN="$INSTALL_DIR/go2rtc"
@@ -48,6 +46,14 @@ install_and_verify_dependencies() {
         log "❌ 错误：核心组件 '$BAMBU_SOURCE_BIN' 未找到。" "Error: Core component '$BAMBU_SOURCE_BIN' not found."
         log "   请打开 Bambu Studio -> Go Live -> 安装 '虚拟摄像头工具' 插件。" "   Please open Bambu Studio -> Go Live -> Install 'Virtual Camera Tools' plugin."; exit 1;
     else log "✅ bambu_source 已由用户安装。" "bambu_source is already installed by the user."; fi
+
+    log "🐍 正在检查 Python 'requests' 库..." "Checking for Python 'requests' library..."
+    if python3 -c "import requests" &>/dev/null; then
+        log "✅ 'requests' 库已安装。" "'requests' library is already installed."
+    else
+        log "📦 正在使用 pip 安装 'requests'..." "Installing 'requests' using pip..."
+        pip install requests
+    fi
 
     if [ ! -f "$GO2RTC_BIN" ]; then
         log "📦 正在下载最新版 go2rtc..." "Downloading the latest version of go2rtc..."; CPU_ARCH=$(uname -m);
@@ -85,16 +91,6 @@ install_and_verify_dependencies() {
     fi
     chmod +x "$FEEDER_SCRIPT"
 
-    if [ ! -d "$BAMBU_CLOUD_API_DIR" ]; then
-        log "📦 克隆 Bambu-Lab-Cloud-API (depth=1)..." "Cloning Bambu-Lab-Cloud-API (depth=1)..."
-        git clone --depth=1 "$BAMBU_CLOUD_API_REPO" "$BAMBU_CLOUD_API_DIR"
-    else log "✅ Bambu-Lab-Cloud-API 仓库已存在。" "Bambu-Lab-Cloud-API repository already exists."; fi
-    if python3 -m pip show bambu-lab-cloud-api &>/dev/null; then
-        log "🐍 Bambu-Lab-Cloud-API 已安装，跳过。" "Bambu-Lab-Cloud-API is already installed, skipping."
-    else
-        log "🐍 正在将 Bambu-Lab-Cloud-API 安装为 Python 包..." "Installing Bambu-Lab-Cloud-API as a Python package..."
-        pip install "$BAMBU_CLOUD_API_DIR"
-    fi
     log "✅ 所有依赖项均已满足。" "All dependencies are satisfied."
 }
 
@@ -118,20 +114,13 @@ update_scripts() {
     else
         log "⚠️  未找到源码目录，请先运行一次安装。" "Source directory not found, please run the installation first."; exit 1;
     fi
-    if [ -d "$BAMBU_CLOUD_API_DIR" ]; then
-        cd "$BAMBU_CLOUD_API_DIR"; git pull; cd - > /dev/null;
-        log "🐍 正在更新 Python 包..." "Updating Python package..."; pip install --upgrade "$BAMBU_CLOUD_API_DIR"
-        log "✅ Python 包更新完成。" "Python package updated successfully."
-    else
-        log "⚠️  未找到 API 库目录，请先运行一次安装。" "API library directory not found, please run the installation first."; exit 1;
-    fi
     exit 0
 }
 
 cleanup_files() {
     log "🧹 正在进行彻底清理..." "Performing a full cleanup..."
     rm -f "$FEEDER_SCRIPT" "$URL_GENERATOR_SCRIPT" "$CONFIG_FILE" "$GO2RTC_BIN"
-    rm -rf "$BAMBU_STREAMER_SRC_DIR" "$BAMBU_CLOUD_API_DIR"
+    rm -rf "$BAMBU_STREAMER_SRC_DIR"
     log "✅ 清理完成。" "Cleanup complete."
     log "   保留的内容: $BAMBU_SOURCE_BIN (由用户通过 Bambu Studio 插件安装)。" "   Preserved: $BAMBU_SOURCE_BIN (installed by the user via Bambu Studio plugin)."
     exit 0
