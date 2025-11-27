@@ -212,7 +212,25 @@ start_service() {
             cleanup_processes; exit 1
         fi
         
-        ffmpeg -re -i "$FIFO_PATH" -c copy -f rtsp "$RTSP_TARGET_URL" &
+        while true; do
+            # Health Check: 检查上游 feeder 进程是否还存活
+            if [ -f "$FEEDER_PID_FILE" ]; then
+                FEEDER_PID=$(cat "$FEEDER_PID_FILE" 2>/dev/null)
+                if ! kill -0 "$FEEDER_PID" 2>/dev/null; then
+                    log "❌ 上游 feeder 进程 (PID: $FEEDER_PID) 已停止。正在退出推流循环..." "Upstream feeder process (PID: $FEEDER_PID) has stopped. Exiting push loop..."
+                    break
+                fi
+            else
+                log "❌ 未找到 feeder PID 文件。正在退出推流循环..." "Feeder PID file not found. Exiting push loop..."
+                break
+            fi
+
+            log "🎬 正在启动 FFMPEG 推流 (TCP模式)..." "Starting FFMPEG stream push (TCP mode)..."
+            ffmpeg -rtsp_transport tcp -re -i "$FIFO_PATH" -c copy -f rtsp "$RTSP_TARGET_URL"
+            
+            log "⚠️ FFMPEG 推流已停止。将在3秒后检查并重启..." "FFMPEG stream stopped. Checking and restarting in 3 seconds..."
+            sleep 3
+        done &
         FFMPEG_PID=$!; wait "$FFMPEG_PID";
     else
         if [ -f "$RTSP_URL_FILE" ]; then
