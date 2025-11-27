@@ -96,9 +96,17 @@ services:
 
 在**宿主机**上执行以下命令。它会自动下载服务脚本到正确的位置、设置权限，然后启动一次交互式登录。
 
-```bash
-docker exec -it bambustudio bash -c "curl -sL -o /custom-services.d/bambu-streamer https://raw.githubusercontent.com/ptbsare/bambusourcestreamer/main/bambu-streamer && chmod +x /custom-services.d/bambu-streamer && /custom-services.d/bambu-streamer --login"
-```
+**请根据您所在的区域选择对应的命令：**
+
+- **全球区 (Global) - 默认**
+  ```bash
+  docker exec -it bambustudio bash -c "curl -sL -o /custom-services.d/bambu-streamer https://raw.githubusercontent.com/ptbsare/bambusourcestreamer/main/bambu-streamer && chmod +x /custom-services.d/bambu-streamer && /custom-services.d/bambu-streamer --login"
+  ```
+
+- **中国区 (China)**
+  ```bash
+  docker exec -it bambustudio bash -c "curl -sL -o /custom-services.d/bambu-streamer https://raw.githubusercontent.com/ptbsare/bambusourcestreamer/main/bambu-streamer && chmod +x /custom-services.d/bambu-streamer && /custom-services.d/bambu-streamer --login --region china"
+  ```
 
 **第 4 步：重启容器**
 
@@ -228,9 +236,17 @@ Once the container is running, access its Web UI (`https://<your_ip>:3001`):
 
 Run the following command on your **host machine**. It will download the script, set permissions, and start an interactive login.
 
-```bash
-docker exec -it bambustudio bash -c "curl -sL -o /custom-services.d/bambu-streamer https://raw.githubusercontent.com/ptbsare/bambusourcestreamer/main/bambu-streamer && chmod +x /custom-services.d/bambu-streamer && /custom-services.d/bambu-streamer --login"
-```
+**Please choose the command corresponding to your region:**
+
+- **Global Region (Default)**
+  ```bash
+  docker exec -it bambustudio bash -c "curl -sL -o /custom-services.d/bambu-streamer https://raw.githubusercontent.com/ptbsare/bambusourcestreamer/main/bambu-streamer && chmod +x /custom-services.d/bambu-streamer && /custom-services.d/bambu-streamer --login"
+  ```
+
+- **China Region**
+  ```bash
+  docker exec -it bambustudio bash -c "curl -sL -o /custom-services.d/bambu-streamer https://raw.githubusercontent.com/ptbsare/bambusourcestreamer/main/bambu-streamer && chmod +x /custom-services.d/bambu-streamer && /custom-services.d/bambu-streamer --login --region china"
+  ```
 
 **Step 4: Restart Container**
 
