@@ -226,7 +226,7 @@ start_service() {
             fi
 
             log "🎬 正在启动 FFMPEG 推流 (TCP模式)..." "Starting FFMPEG stream push (TCP mode)..."
-            ffmpeg -rtsp_transport tcp -re -i "$FIFO_PATH" -c copy -f rtsp "$RTSP_TARGET_URL"
+            ffmpeg -re -i "$FIFO_PATH" -c copy -f rtsp -rtsp_transport tcp "$RTSP_TARGET_URL"
             
             log "⚠️ FFMPEG 推流已停止。将在3秒后检查并重启..." "FFMPEG stream stopped. Checking and restarting in 3 seconds..."
             sleep 3
