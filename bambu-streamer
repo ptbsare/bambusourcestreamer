@@ -143,20 +143,47 @@ update_scripts() {
         else
             CURRENT_VERSION=""
             if [ -f "$GO2RTC_BIN" ]; then
+                # 确保 go2rtc 有执行权限
+                chmod +x "$GO2RTC_BIN" 2>/dev/null
+                
                 # go2rtc 输出格式: "go2rtc version 1.9.11 (be80eb1) linux/amd64"
                 # 提取版本号并添加 'v' 前缀以匹配 GitHub release tag 格式
-                VERSION_OUTPUT=$("$GO2RTC_BIN" --version 2>&1 | head -n1)
-                VERSION_NUM=$(echo "$VERSION_OUTPUT" | grep -oP 'version \K[\d.]+' || echo "")
-                if [ -n "$VERSION_NUM" ]; then
-                    CURRENT_VERSION="v$VERSION_NUM"
+                VERSION_OUTPUT=$("$GO2RTC_BIN" --version 2>&1 | head -n1 || echo "")
+                
+                # 调试：显示原始输出（生产环境可以注释掉）
+                log "   [Debug] go2rtc --version 输出: '$VERSION_OUTPUT'" "   [Debug] go2rtc --version output: '$VERSION_OUTPUT'"
+                
+                # 检查是否是权限错误或进程占用
+                if [[ "$VERSION_OUTPUT" == *"Permission denied"* ]]; then
+                    log "   ⚠️ 无法执行 go2rtc（权限问题或进程占用），跳过版本检测" "   Cannot execute go2rtc (permission issue or process locked), skipping version check"
+                    CURRENT_VERSION="unknown (权限错误)"
+                elif [[ "$VERSION_OUTPUT" == *"cannot execute binary file"* ]]; then
+                    log "   ⚠️ go2rtc 二进制文件损坏，将强制重新下载" "   go2rtc binary is corrupted, will force re-download"
+                    CURRENT_VERSION="corrupted"
                 else
-                    CURRENT_VERSION="unknown"
+                    # 尝试多种解析方法
+                    if [[ "$VERSION_OUTPUT" =~ version[[:space:]]+([0-9]+\.[0-9]+\.[0-9]+) ]]; then
+                        CURRENT_VERSION="v${BASH_REMATCH[1]}"
+                    elif [[ "$VERSION_OUTPUT" =~ ([0-9]+\.[0-9]+\.[0-9]+) ]]; then
+                        CURRENT_VERSION="v${BASH_REMATCH[1]}"
+                    else
+                        # 如果正则匹配失败，尝试用 grep
+                        VERSION_NUM=$(echo "$VERSION_OUTPUT" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -n1 || echo "")
+                        if [ -n "$VERSION_NUM" ]; then
+                            CURRENT_VERSION="v$VERSION_NUM"
+                        else
+                            CURRENT_VERSION="unknown"
+                        fi
+                    fi
                 fi
+            else
+                CURRENT_VERSION="未安装"
             fi
             
             log "   当前版本: ${CURRENT_VERSION:-未安装} | 最新版本: $LATEST_VERSION" "   Current version: ${CURRENT_VERSION:-not installed} | Latest version: $LATEST_VERSION"
             
-            if [ "$CURRENT_VERSION" != "$LATEST_VERSION" ]; then
+            # 如果版本不同，或者二进制文件损坏，则下载
+            if [ "$CURRENT_VERSION" == "corrupted" ] || [ "$CURRENT_VERSION" != "$LATEST_VERSION" ]; then
                 log "📥 正在下载 go2rtc $LATEST_VERSION..." "Downloading go2rtc $LATEST_VERSION..."
                 DOWNLOAD_URL=$(curl -s $API_URL | jq -r ".assets[] | select(.name | endswith(\"$GO2RTC_ARCH\")) | .browser_download_url")
                 
@@ -169,18 +196,34 @@ update_scripts() {
                         log "   已备份旧版本到 $GO2RTC_BIN.bak" "   Backed up old version to $GO2RTC_BIN.bak"
                     fi
                     
-                    curl -sL "$DOWNLOAD_URL" -o "$GO2RTC_BIN"
-                    chmod +x "$GO2RTC_BIN"
-                    
-                    # 验证下载
-                    if [ -f "$GO2RTC_BIN" ] && [ -x "$GO2RTC_BIN" ]; then
-                        rm -f "$GO2RTC_BIN.bak"
-                        log "✅ go2rtc 更新到 $LATEST_VERSION 成功。" "go2rtc updated to $LATEST_VERSION successfully."
+                    # 下载新版本
+                    if curl -sL "$DOWNLOAD_URL" -o "$GO2RTC_BIN"; then
+                        # 确保有执行权限
+                        chmod +x "$GO2RTC_BIN"
+                        
+                        # 验证下载的文件是否可执行
+                        if [ -f "$GO2RTC_BIN" ] && [ -x "$GO2RTC_BIN" ]; then
+                            # 尝试运行 --version 来验证二进制文件是否完整
+                            if "$GO2RTC_BIN" --version &>/dev/null; then
+                                rm -f "$GO2RTC_BIN.bak"
+                                log "✅ go2rtc 更新到 $LATEST_VERSION 成功。" "go2rtc updated to $LATEST_VERSION successfully."
+                            else
+                                log "⚠️ go2rtc 下载的文件似乎损坏，恢复旧版本..." "Downloaded go2rtc appears corrupted, restoring old version..."
+                                if [ -f "$GO2RTC_BIN.bak" ]; then
+                                    mv "$GO2RTC_BIN.bak" "$GO2RTC_BIN"
+                                    log "❌ 已恢复旧版本。" "Old version restored."
+                                fi
+                            fi
+                        else
+                            log "❌ 下载的文件权限设置失败，恢复旧版本..." "Failed to set permissions on downloaded file, restoring old version..."
+                            if [ -f "$GO2RTC_BIN.bak" ]; then
+                                mv "$GO2RTC_BIN.bak" "$GO2RTC_BIN"
+                            fi
+                        fi
                     else
-                        # 恢复备份
+                        log "❌ 下载失败，恢复旧版本..." "Download failed, restoring old version..."
                         if [ -f "$GO2RTC_BIN.bak" ]; then
                             mv "$GO2RTC_BIN.bak" "$GO2RTC_BIN"
-                            log "❌ go2rtc 下载失败，已恢复旧版本。" "go2rtc download failed, restored old version."
                         fi
                     fi
                 fi
