@@ -10,12 +10,12 @@
 #   - 多个客户端可以同时观看
 #   - 自动重连机制
 preload:
-  bambu: "video=h264"
+  bambu: "video=copy"
 streams:
   bambu:
     # 从 FIFO 读取 H.264 视频流
     # ffmpeg 会持续从 FIFO 读取数据并重新打包
-    - ffmpeg:/tmp/bambu_video.fifo#video=h264
+    - ffmpeg:/tmp/bambu_video.fifo#video=copy
 
 # API 服务器配置
 api:
